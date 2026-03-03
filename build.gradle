@@ -10,7 +10,7 @@ def artifactId = project.findProperty('project-artifact-id') ?: 'mceconomy-commo
 def artifactName = project.findProperty('project-artifact-name') ?: 'MCEconomy Common'
 def artifactDescription = project.findProperty('project-artifact-description') ?: "Shared library for the MCEconomy ecosystem."
 def gitOwner = project.findProperty('git-org-name') ?: 'MCClauneck'
-def gitRepo = project.findProperty('git-org-repository') ?: 'plugin-api'
+def gitRepo = project.findProperty('git-org-repository') ?: 'plugin-common'
 def gitUrl = "https://github.com/${gitOwner}/${gitRepo}"
 
 println "[${project.name}] Final Version (via Plugin): ${project.version}"
@@ -18,7 +18,7 @@ println "[${project.name}] Final Version (via Plugin): ${project.version}"
 repositories {
     mavenCentral()
     maven {
-        url = uri("https://maven.pkg.github.com/MCClauneck/plugin-api")
+        url = uri("https://maven.pkg.github.com/MCClauneck/plugin-common")
         credentials {
             username = System.getenv('GITHUB_ACTOR') ?: System.getenv('AGENT_NAME') ?: System.getenv('USER_GITHUB_NAME')
             password = System.getenv('GITHUB_TOKEN') ?: System.getenv('AGENT_TOKEN') ?: System.getenv('USER_GITHUB_TOKEN')
