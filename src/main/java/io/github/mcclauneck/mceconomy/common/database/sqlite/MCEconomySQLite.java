@@ -89,14 +89,9 @@ public class MCEconomySQLite implements IMCEconomyDB {
 
     @Override
     public boolean ensureAccountExist(String accountUuid, String accountType) {
-        String sql = "INSERT OR IGNORE INTO economy_accounts (account_uuid, account_type) VALUES (?, ?)";
         synchronized (lock) {
-            try (Connection conn = dataSource.getConnection();
-                 PreparedStatement pstmt = conn.prepareStatement(sql)) {
-                pstmt.setString(1, accountUuid);
-                pstmt.setString(2, accountType);
-                pstmt.executeUpdate();
-                return true;
+            try (Connection conn = dataSource.getConnection()) {
+                return ensureAccountExist(conn, accountUuid, accountType);
             } catch (SQLException e) {
                 e.printStackTrace();
                 return false;
@@ -105,7 +100,7 @@ public class MCEconomySQLite implements IMCEconomyDB {
     }
 
     @Override
-    public int getCoin(String accountUuid, String accountType, CurrencyType coinType) {
+    public long getCoin(String accountUuid, String accountType, CurrencyType coinType) {
         synchronized (lock) {
             String col = columnName(coinType);
             ensureAccountExist(accountUuid, accountType);
@@ -115,7 +110,7 @@ public class MCEconomySQLite implements IMCEconomyDB {
                 pstmt.setString(1, accountUuid);
                 pstmt.setString(2, accountType);
                 ResultSet rs = pstmt.executeQuery();
-                if (rs.next()) return rs.getInt(1);
+                if (rs.next()) return Math.max(0L, rs.getLong(1));
             } catch (SQLException e) {
                 e.printStackTrace();
             }
@@ -124,7 +119,7 @@ public class MCEconomySQLite implements IMCEconomyDB {
     }
 
     @Override
-    public boolean setCoin(String accountUuid, String accountType, CurrencyType coinType, int amount) {
+    public boolean setCoin(String accountUuid, String accountType, CurrencyType coinType, long amount) {
         synchronized (lock) {
             if (amount < 0) return false;
             String col = columnName(coinType);
@@ -132,7 +127,7 @@ public class MCEconomySQLite implements IMCEconomyDB {
             String sql = "UPDATE economy_accounts SET " + col + " = ? WHERE account_uuid = ? AND account_type = ?";
             try (Connection conn = dataSource.getConnection();
                  PreparedStatement pstmt = conn.prepareStatement(sql)) {
-                pstmt.setInt(1, amount);
+                pstmt.setLong(1, amount);
                 pstmt.setString(2, accountUuid);
                 pstmt.setString(3, accountType);
                 pstmt.executeUpdate();
@@ -145,16 +140,28 @@ public class MCEconomySQLite implements IMCEconomyDB {
     }
 
     @Override
-    public boolean addCoin(String accountUuid, String accountType, CurrencyType coinType, int amount) {
+    public boolean addCoin(String accountUuid, String accountType, CurrencyType coinType, long amount) {
         synchronized (lock) {
             if (amount <= 0) return false;
-            int newAmount = getCoin(accountUuid, accountType, coinType) + amount;
-            return setCoin(accountUuid, accountType, coinType, newAmount);
+            String col = columnName(coinType);
+            ensureAccountExist(accountUuid, accountType);
+            String sql = "UPDATE economy_accounts SET " + col + " = " + col + " + ? WHERE account_uuid = ? AND account_type = ?";
+            try (Connection conn = dataSource.getConnection();
+                 PreparedStatement pstmt = conn.prepareStatement(sql)) {
+                pstmt.setLong(1, amount);
+                pstmt.setString(2, accountUuid);
+                pstmt.setString(3, accountType);
+                pstmt.executeUpdate();
+                return true;
+            } catch (SQLException e) {
+                e.printStackTrace();
+                return false;
+            }
         }
     }
 
     @Override
-    public boolean minusCoin(String accountUuid, String accountType, CurrencyType coinType, int amount) {
+    public boolean minusCoin(String accountUuid, String accountType, CurrencyType coinType, long amount) {
         synchronized (lock) {
             if (amount <= 0) return false;
             String col = columnName(coinType);
@@ -162,10 +169,10 @@ public class MCEconomySQLite implements IMCEconomyDB {
                          "WHERE account_uuid = ? AND account_type = ? AND " + col + " >= ?";
             try (Connection conn = dataSource.getConnection();
                  PreparedStatement pstmt = conn.prepareStatement(sql)) {
-                pstmt.setInt(1, amount);
+                pstmt.setLong(1, amount);
                 pstmt.setString(2, accountUuid);
                 pstmt.setString(3, accountType);
-                pstmt.setInt(4, amount);
+                pstmt.setLong(4, amount);
                 return pstmt.executeUpdate() > 0;
             } catch (SQLException e) {
                 e.printStackTrace();
@@ -175,7 +182,7 @@ public class MCEconomySQLite implements IMCEconomyDB {
     }
 
     @Override
-    public boolean sendCoin(String senderUuid, String senderType, String receiverUuid, String receiverType, CurrencyType coinType, int amount) {
+    public boolean sendCoin(String senderUuid, String senderType, String receiverUuid, String receiverType, CurrencyType coinType, long amount) {
         synchronized (lock) {
             if (amount <= 0) return false;
             String col = columnName(coinType);
@@ -183,16 +190,24 @@ public class MCEconomySQLite implements IMCEconomyDB {
                 boolean prevAutoCommit = conn.getAutoCommit();
                 conn.setAutoCommit(false);
                 try {
-                    ensureAccountExist(senderUuid, senderType);
-                    ensureAccountExist(receiverUuid, receiverType);
+                    if (!ensureAccountExist(conn, senderUuid, senderType)) {
+                        conn.rollback();
+                        conn.setAutoCommit(prevAutoCommit);
+                        return false;
+                    }
+                    if (!ensureAccountExist(conn, receiverUuid, receiverType)) {
+                        conn.rollback();
+                        conn.setAutoCommit(prevAutoCommit);
+                        return false;
+                    }
 
                     String withdrawSql = "UPDATE economy_accounts SET " + col + " = " + col + " - ? " +
                                          "WHERE account_uuid = ? AND account_type = ? AND " + col + " >= ?";
                     try (PreparedStatement withdraw = conn.prepareStatement(withdrawSql)) {
-                        withdraw.setInt(1, amount);
+                        withdraw.setLong(1, amount);
                         withdraw.setString(2, senderUuid);
                         withdraw.setString(3, senderType);
-                        withdraw.setInt(4, amount);
+                        withdraw.setLong(4, amount);
                         if (withdraw.executeUpdate() == 0) {
                             conn.rollback();
                             conn.setAutoCommit(prevAutoCommit);
@@ -202,7 +217,7 @@ public class MCEconomySQLite implements IMCEconomyDB {
 
                     String depositSql = "UPDATE economy_accounts SET " + col + " = " + col + " + ? WHERE account_uuid = ? AND account_type = ?";
                     try (PreparedStatement deposit = conn.prepareStatement(depositSql)) {
-                        deposit.setInt(1, amount);
+                        deposit.setLong(1, amount);
                         deposit.setString(2, receiverUuid);
                         deposit.setString(3, receiverType);
                         deposit.executeUpdate();
@@ -243,5 +258,18 @@ public class MCEconomySQLite implements IMCEconomyDB {
             case SILVER -> "silver";
             case GOLD -> "gold";
         };
+    }
+
+    /**
+     * Insert-or-ignore using an existing connection to participate in transactions.
+     */
+    private boolean ensureAccountExist(Connection conn, String accountUuid, String accountType) throws SQLException {
+        String sql = "INSERT OR IGNORE INTO economy_accounts (account_uuid, account_type) VALUES (?, ?)";
+        try (PreparedStatement pstmt = conn.prepareStatement(sql)) {
+            pstmt.setString(1, accountUuid);
+            pstmt.setString(2, accountType);
+            pstmt.executeUpdate();
+            return true;
+        }
     }
 }
