@@ -67,51 +67,51 @@ public class MCEconomyProvider {
 
     // --- GETTERS ---
 
-    public CompletableFuture<Integer> getCoin(String accountUuid, String accountType) {
+    public CompletableFuture<Long> getCoin(String accountUuid, String accountType) {
         return getCoin(accountUuid, accountType, DEFAULT_COIN);
     }
 
-    public CompletableFuture<Integer> getCoin(String accountUuid, String accountType, CurrencyType coinType) {
+    public CompletableFuture<Long> getCoin(String accountUuid, String accountType, CurrencyType coinType) {
         return runAsync(() -> db.getCoin(accountUuid, accountType, coinType));
     }
 
     // --- SETTERS ---
 
-    public CompletableFuture<Boolean> setCoin(String accountUuid, String accountType, int amount) {
+    public CompletableFuture<Boolean> setCoin(String accountUuid, String accountType, long amount) {
         return setCoin(accountUuid, accountType, DEFAULT_COIN, amount);
     }
 
-    public CompletableFuture<Boolean> setCoin(String accountUuid, String accountType, CurrencyType coinType, int amount) {
+    public CompletableFuture<Boolean> setCoin(String accountUuid, String accountType, CurrencyType coinType, long amount) {
         return runAsync(() -> db.setCoin(accountUuid, accountType, coinType, amount));
     }
 
     // --- ADD ---
 
-    public CompletableFuture<Boolean> addCoin(String accountUuid, String accountType, int amount) {
+    public CompletableFuture<Boolean> addCoin(String accountUuid, String accountType, long amount) {
         return addCoin(accountUuid, accountType, DEFAULT_COIN, amount);
     }
 
-    public CompletableFuture<Boolean> addCoin(String accountUuid, String accountType, CurrencyType coinType, int amount) {
+    public CompletableFuture<Boolean> addCoin(String accountUuid, String accountType, CurrencyType coinType, long amount) {
         return runAsync(() -> db.addCoin(accountUuid, accountType, coinType, amount));
     }
 
     // --- MINUS ---
 
-    public CompletableFuture<Boolean> minusCoin(String accountUuid, String accountType, int amount) {
+    public CompletableFuture<Boolean> minusCoin(String accountUuid, String accountType, long amount) {
         return minusCoin(accountUuid, accountType, DEFAULT_COIN, amount);
     }
 
-    public CompletableFuture<Boolean> minusCoin(String accountUuid, String accountType, CurrencyType coinType, int amount) {
+    public CompletableFuture<Boolean> minusCoin(String accountUuid, String accountType, CurrencyType coinType, long amount) {
         return runAsync(() -> db.minusCoin(accountUuid, accountType, coinType, amount));
     }
 
     // --- SEND ---
 
-    public CompletableFuture<Boolean> sendCoin(String senderUuid, String senderType, String receiverUuid, String receiverType, int amount) {
+    public CompletableFuture<Boolean> sendCoin(String senderUuid, String senderType, String receiverUuid, String receiverType, long amount) {
         return sendCoin(senderUuid, senderType, receiverUuid, receiverType, DEFAULT_COIN, amount);
     }
 
-    public CompletableFuture<Boolean> sendCoin(String senderUuid, String senderType, String receiverUuid, String receiverType, CurrencyType coinType, int amount) {
+    public CompletableFuture<Boolean> sendCoin(String senderUuid, String senderType, String receiverUuid, String receiverType, CurrencyType coinType, long amount) {
         return runAsync(() -> db.sendCoin(senderUuid, senderType, receiverUuid, receiverType, coinType, amount));
     }
 

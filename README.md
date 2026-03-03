@@ -4,7 +4,7 @@ Shared library for the MCEconomy ecosystem (group `io.github.mcclauneck`, artifa
 
 ## Dependency coordinates
 
-Version: `2026.0.4-1`
+Version: `2026.0.4-2`
 
 ### Maven
 
@@ -36,7 +36,7 @@ Add GitHub Packages (with credentials) and dependency:
   <dependency>
     <groupId>io.github.mcclauneck</groupId>
     <artifactId>mceconomy-common</artifactId>
-    <version>2026.0.4-1</version>
+    <version>2026.0.4-2</version>
   </dependency>
 </dependencies>
 ```
@@ -56,7 +56,7 @@ repositories {
 }
 
 dependencies {
-    implementation "io.github.mcclauneck:mceconomy-common:2026.0.4-1"
+    implementation "io.github.mcclauneck:mceconomy-common:2026.0.4-2"
 }
 ```
 
@@ -75,7 +75,7 @@ repositories {
 }
 
 dependencies {
-    implementation("io.github.mcclauneck:mceconomy-common:2026.0.4-1")
+    implementation("io.github.mcclauneck:mceconomy-common:2026.0.4-2")
 }
 ```
 
