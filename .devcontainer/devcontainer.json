@@ -1,0 +1,42 @@
+{
+    "name": "Java 21 & Gradle (MCClauneck)",
+    "build": {
+        "dockerfile": "Dockerfile",
+        "context": ".."
+    },
+    "features": {
+        "ghcr.io/devcontainers/features/java:1": {
+            "version": "21",
+            "installGradle": "true",
+            "gradleVersion": "latest",
+            "installMaven": "true",
+            "mavenVersion": "latest",
+            "jdkDistro": "ms"
+        },
+        "ghcr.io/devcontainers/features/git:1": {
+            "version": "latest",
+            "ppa": "true"
+        },
+        "ghcr.io/devcontainers/features/github-cli:1": {}
+    },
+    "customizations": {
+        "vscode": {
+            "settings": {
+                "workbench.colorTheme": "Default Dark Modern",
+
+                "java.jdt.ls.java.home": "/usr/local/sdkman/candidates/java/current",
+                "java.compile.nullAnalysis.mode": "automatic"
+            },
+            "extensions": [
+                "vscjava.vscode-java-pack",
+                "vscjava.vscode-gradle",
+                "eamodio.gitlens",
+                "redhat.vscode-yaml",
+                "editorconfig.editorconfig"
+            ]
+        }
+    },
+    "postCreateCommand": "echo '--- VERSIONS ---' && java -version && gradle --version && git --version",
+    "remoteUser": "vscode"
+}
+
