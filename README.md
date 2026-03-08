@@ -8,7 +8,7 @@ MCEconomy Common is the shared library for the MCEconomy ecosystem.
 
 - Group: `io.github.mcclauneck`
 - Artifact: `mceconomy-common`
-- Version: `2026.0.4-3`
+- Version: `2026.0.4-4`
 
 Full documentation (imports, setup, and database guides):
 
