@@ -1,4 +1,4 @@
-package io.github.mcclauneck.mceconomy.common.database.mysql;
+package io.github.mcclauneck.mceconomy.common.database.postgresql;
 
 import com.zaxxer.hikari.HikariConfig;
 import com.zaxxer.hikari.HikariDataSource;
@@ -13,50 +13,39 @@ import java.sql.Statement;
 import java.util.Objects;
 
 /**
- * MySQL implementation for MCEconomy using explicit connection parameters.
+ * PostgreSQL implementation for MCEconomy.
  */
-public class MCEconomyMySQL implements IMCEconomyDB {
+public class MCEconomyPostgreSQL implements IMCEconomyDB {
 
     /**
-     * The connection pool data source.
+     * The PostgreSQL connection pool data source.
      */
     private final HikariDataSource dataSource;
 
     /**
-     * Constructs a new MySQL database handler using provided credentials.
+     * Constructs a new PostgreSQL database handler.
      *
-     * @param dbUser username for the database
-     * @param dbPass password for the database
-     * @param dbHost host of the database
-     * @param dbName schema/database name
-     * @param dbPort port number as string (defaults to 3306 if null/blank)
-     * @param dbSsl  whether to use SSL
+     * @param dbUser database username
+     * @param dbPass database password
+     * @param dbHost database host
+     * @param dbName database/schema name
+     * @param dbPort database port (defaults to 5432 when blank)
+     * @param dbSsl  whether SSL should be enabled
      */
-    public MCEconomyMySQL(String dbUser, String dbPass, String dbHost, String dbName, String dbPort, boolean dbSsl) {
-        String port = (dbPort == null || dbPort.isBlank()) ? "3306" : dbPort.trim();
+    public MCEconomyPostgreSQL(String dbUser, String dbPass, String dbHost, String dbName, String dbPort, boolean dbSsl) {
+        String port = (dbPort == null || dbPort.isBlank()) ? "5432" : dbPort.trim();
 
         HikariConfig config = new HikariConfig();
-        String jdbcUrl = "jdbc:mysql://" + dbHost + ":" + port + "/" + dbName + "?useSSL=" + dbSsl + "&verifyServerCertificate=" + dbSsl + "&useAffectedRows=true";
-        config.setJdbcUrl(jdbcUrl);
+        // PostgreSQL JDBC URL format
+        String sslParam = dbSsl ? "?sslmode=verify-full" : "?sslmode=disable";
+        config.setJdbcUrl("jdbc:postgresql://" + dbHost + ":" + port + "/" + dbName + sslParam);
         config.setUsername(dbUser);
         config.setPassword(dbPass);
 
-        // Pool settings tuned for lightweight async usage
         config.setMaximumPoolSize(10);
         config.setMinimumIdle(2);
         config.setConnectionTimeout(30000);
         config.setLeakDetectionThreshold(10000);
-
-        // Security & performance properties
-        config.addDataSourceProperty("cachePrepStmts", "true");
-        config.addDataSourceProperty("prepStmtCacheSize", "250");
-        config.addDataSourceProperty("prepStmtCacheSqlLimit", "2048");
-        config.addDataSourceProperty("useServerPrepStmts", "true");
-        config.addDataSourceProperty("requireSSL", String.valueOf(dbSsl));
-        config.addDataSourceProperty("useSSL", String.valueOf(dbSsl));
-        config.addDataSourceProperty("enabledTLSProtocols", "TLSv1.2,TLSv1.3");
-        config.addDataSourceProperty("clientCertificateKeyStoreType", "PKCS12");
-        config.addDataSourceProperty("trustCertificateKeyStoreType", "PKCS12");
 
         this.dataSource = new HikariDataSource(config);
 
@@ -102,6 +91,27 @@ public class MCEconomyMySQL implements IMCEconomyDB {
         } catch (SQLException e) {
             e.printStackTrace();
             return false;
+        }
+    }
+
+    /**
+     * Ensures an account row exists using an existing SQL connection.
+     *
+     * @param conn        active SQL connection
+     * @param accountUuid unique account identifier
+     * @param accountType logical account type
+     * @return true when present/created
+     * @throws SQLException if insert operation fails
+     */
+    private boolean ensureAccountExist(Connection conn, String accountUuid, String accountType) throws SQLException {
+        // PostgreSQL uses ON CONFLICT instead of INSERT IGNORE
+        String sql = "INSERT INTO economy_accounts (account_uuid, account_type) VALUES (?, ?) " +
+                     "ON CONFLICT (account_uuid, account_type) DO NOTHING";
+        try (PreparedStatement pstmt = conn.prepareStatement(sql)) {
+            pstmt.setString(1, accountUuid);
+            pstmt.setString(2, accountType);
+            pstmt.executeUpdate();
+            return true;
         }
     }
 
@@ -234,12 +244,7 @@ public class MCEconomyMySQL implements IMCEconomyDB {
             boolean prevAutoCommit = conn.getAutoCommit();
             conn.setAutoCommit(false);
             try {
-                if (!ensureAccountExist(conn, senderUuid, senderType)) {
-                    conn.rollback();
-                    conn.setAutoCommit(prevAutoCommit);
-                    return false;
-                }
-                if (!ensureAccountExist(conn, receiverUuid, receiverType)) {
+                if (!ensureAccountExist(conn, senderUuid, senderType) || !ensureAccountExist(conn, receiverUuid, receiverType)) {
                     conn.rollback();
                     conn.setAutoCommit(prevAutoCommit);
                     return false;
@@ -282,7 +287,7 @@ public class MCEconomyMySQL implements IMCEconomyDB {
     }
 
     /**
-     * Resolve the trusted column name for a currency type.
+     * Resolves the trusted SQL column name for a currency type.
      *
      * @param type currency enum value
      * @return trusted SQL column name
@@ -298,26 +303,7 @@ public class MCEconomyMySQL implements IMCEconomyDB {
     }
 
     /**
-     * Insert-or-ignore using an existing connection to participate in transactions.
-     *
-     * @param conn        active SQL connection
-     * @param accountUuid unique account identifier
-     * @param accountType logical account type
-     * @return true when present/created
-     * @throws SQLException if insert operation fails
-     */
-    private boolean ensureAccountExist(Connection conn, String accountUuid, String accountType) throws SQLException {
-        String sql = "INSERT IGNORE INTO economy_accounts (account_uuid, account_type) VALUES (?, ?)";
-        try (PreparedStatement pstmt = conn.prepareStatement(sql)) {
-            pstmt.setString(1, accountUuid);
-            pstmt.setString(2, accountType);
-            pstmt.executeUpdate();
-            return true;
-        }
-    }
-
-    /**
-     * Closes the MySQL connection pool and releases resources.
+     * Closes the PostgreSQL connection pool and releases resources.
      */
     @Override
     public void close() {

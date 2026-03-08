@@ -60,6 +60,9 @@ public class MCEconomySQLite implements IMCEconomyDB {
 
     /**
      * Resolve a potentially relative path to a file.
+     *
+     * @param path raw file path from configuration
+     * @return resolved absolute file path
      */
     private File resolvePath(String path) {
         File candidate = new File(path);
@@ -71,6 +74,8 @@ public class MCEconomySQLite implements IMCEconomyDB {
 
     /**
      * Creates the economy_accounts table if it does not already exist in the SQLite file.
+     *
+     * @throws SQLException if table creation fails
      */
     private void createTable() throws SQLException {
         String sql = "CREATE TABLE IF NOT EXISTS economy_accounts (" +
@@ -87,6 +92,13 @@ public class MCEconomySQLite implements IMCEconomyDB {
         }
     }
 
+    /**
+     * Ensures an account row exists.
+     *
+     * @param accountUuid unique account identifier
+     * @param accountType logical account type
+     * @return true when present/created; false on error
+     */
     @Override
     public boolean ensureAccountExist(String accountUuid, String accountType) {
         synchronized (lock) {
@@ -99,6 +111,14 @@ public class MCEconomySQLite implements IMCEconomyDB {
         }
     }
 
+    /**
+     * Reads a coin balance.
+     *
+     * @param accountUuid unique account identifier
+     * @param accountType logical account type
+     * @param coinType    currency to fetch
+     * @return non-negative balance
+     */
     @Override
     public long getCoin(String accountUuid, String accountType, CurrencyType coinType) {
         synchronized (lock) {
@@ -118,6 +138,15 @@ public class MCEconomySQLite implements IMCEconomyDB {
         return 0;
     }
 
+    /**
+     * Sets a coin balance to an absolute amount.
+     *
+     * @param accountUuid unique account identifier
+     * @param accountType logical account type
+     * @param coinType    currency to set
+     * @param amount      new amount (must be >= 0)
+     * @return true if updated
+     */
     @Override
     public boolean setCoin(String accountUuid, String accountType, CurrencyType coinType, long amount) {
         synchronized (lock) {
@@ -139,6 +168,15 @@ public class MCEconomySQLite implements IMCEconomyDB {
         }
     }
 
+    /**
+     * Adds to a coin balance.
+     *
+     * @param accountUuid unique account identifier
+     * @param accountType logical account type
+     * @param coinType    currency to add
+     * @param amount      delta to add (must be > 0)
+     * @return true if updated
+     */
     @Override
     public boolean addCoin(String accountUuid, String accountType, CurrencyType coinType, long amount) {
         synchronized (lock) {
@@ -160,6 +198,15 @@ public class MCEconomySQLite implements IMCEconomyDB {
         }
     }
 
+    /**
+     * Subtracts from a coin balance with non-negative guard.
+     *
+     * @param accountUuid unique account identifier
+     * @param accountType logical account type
+     * @param coinType    currency to subtract
+     * @param amount      delta to subtract (must be > 0)
+     * @return true if funds were sufficient and updated
+     */
     @Override
     public boolean minusCoin(String accountUuid, String accountType, CurrencyType coinType, long amount) {
         synchronized (lock) {
@@ -181,6 +228,17 @@ public class MCEconomySQLite implements IMCEconomyDB {
         }
     }
 
+    /**
+     * Transfers funds between two accounts transactionally.
+     *
+     * @param senderUuid   sender account id
+     * @param senderType   sender account type
+     * @param receiverUuid receiver account id
+     * @param receiverType receiver account type
+     * @param coinType     currency to transfer
+     * @param amount       amount to transfer (>0)
+     * @return true if transfer committed
+     */
     @Override
     public boolean sendCoin(String senderUuid, String senderType, String receiverUuid, String receiverType, CurrencyType coinType, long amount) {
         synchronized (lock) {
@@ -228,7 +286,6 @@ public class MCEconomySQLite implements IMCEconomyDB {
                     return true;
                 } catch (SQLException e) {
                     try { conn.rollback(); } catch (SQLException ignored) {}
-                    try { conn.setAutoCommit(prevAutoCommit); } catch (SQLException ignored) {}
                     throw e;
                 }
             } catch (SQLException e) {
@@ -238,6 +295,9 @@ public class MCEconomySQLite implements IMCEconomyDB {
         }
     }
 
+    /**
+     * Closes the SQLite data source.
+     */
     @Override
     public void close() {
         synchronized (lock) {
@@ -248,7 +308,10 @@ public class MCEconomySQLite implements IMCEconomyDB {
     }
 
     /**
-     * Resolve the trusted column name for a currency type.
+     * Resolves the trusted SQL column name for a currency type.
+     *
+     * @param type currency enum value
+     * @return trusted SQL column name
      */
     private String columnName(CurrencyType type) {
         Objects.requireNonNull(type, "currency type");
@@ -262,6 +325,12 @@ public class MCEconomySQLite implements IMCEconomyDB {
 
     /**
      * Insert-or-ignore using an existing connection to participate in transactions.
+     *
+     * @param conn        active SQL connection
+     * @param accountUuid unique account identifier
+     * @param accountType logical account type
+     * @return true when present/created
+     * @throws SQLException if insert operation fails
      */
     private boolean ensureAccountExist(Connection conn, String accountUuid, String accountType) throws SQLException {
         String sql = "INSERT OR IGNORE INTO economy_accounts (account_uuid, account_type) VALUES (?, ?)";
