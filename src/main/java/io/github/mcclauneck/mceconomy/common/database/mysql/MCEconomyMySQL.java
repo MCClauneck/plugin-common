@@ -3,6 +3,7 @@ package io.github.mcclauneck.mceconomy.common.database.mysql;
 import com.zaxxer.hikari.HikariConfig;
 import com.zaxxer.hikari.HikariDataSource;
 import io.github.mcclauneck.mceconomy.api.database.IMCEconomyDB;
+import io.github.mcclauneck.mceconomy.api.enums.CoinLogOperation;
 import io.github.mcclauneck.mceconomy.api.enums.CurrencyType;
 
 import java.sql.Connection;
@@ -62,6 +63,7 @@ public class MCEconomyMySQL implements IMCEconomyDB {
 
         try {
             createTable();
+            createLogTable();
         } catch (SQLException e) {
             e.printStackTrace();
         }
@@ -81,6 +83,32 @@ public class MCEconomyMySQL implements IMCEconomyDB {
                      "silver BIGINT NOT NULL DEFAULT 0, " +
                      "gold BIGINT NOT NULL DEFAULT 0, " +
                      "PRIMARY KEY (account_uuid, account_type))";
+
+        try (Connection conn = dataSource.getConnection();
+             Statement stmt = conn.createStatement()) {
+            stmt.execute(sql);
+        }
+    }
+
+    /**
+     * Creates the mceconomy_logs table for coin operation audit records.
+     *
+     * @throws SQLException if table creation fails
+     */
+    private void createLogTable() throws SQLException {
+        String sql = "CREATE TABLE IF NOT EXISTS mceconomy_logs (" +
+                     "id BIGINT NOT NULL AUTO_INCREMENT, " +
+                     "operation VARCHAR(16) NOT NULL, " +
+                     "account_uuid VARCHAR(36) NOT NULL, " +
+                     "account_type VARCHAR(32) NOT NULL, " +
+                     "target_uuid VARCHAR(36) NULL, " +
+                     "target_type VARCHAR(32) NULL, " +
+                     "currency VARCHAR(16) NOT NULL, " +
+                     "amount BIGINT NOT NULL, " +
+                     "success BOOLEAN NOT NULL, " +
+                     "message VARCHAR(255) NULL, " +
+                     "created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP, " +
+                     "PRIMARY KEY (id))";
 
         try (Connection conn = dataSource.getConnection();
              Statement stmt = conn.createStatement()) {
@@ -123,11 +151,17 @@ public class MCEconomyMySQL implements IMCEconomyDB {
             pstmt.setString(1, accountUuid);
             pstmt.setString(2, accountType);
             try (ResultSet rs = pstmt.executeQuery()) {
-                if (rs.next()) return Math.max(0L, rs.getLong(1));
+                if (rs.next()) {
+                    long value = Math.max(0L, rs.getLong(1));
+                    logCoinOperation(CoinLogOperation.GET, accountUuid, accountType, null, null, coinType, value, true, null);
+                    return value;
+                }
             }
         } catch (SQLException e) {
+            logCoinOperation(CoinLogOperation.GET, accountUuid, accountType, null, null, coinType, 0L, false, e.getMessage());
             e.printStackTrace();
         }
+        logCoinOperation(CoinLogOperation.GET, accountUuid, accountType, null, null, coinType, 0L, false, "balance row not found");
         return 0;
     }
 
@@ -142,7 +176,10 @@ public class MCEconomyMySQL implements IMCEconomyDB {
      */
     @Override
     public boolean setCoin(String accountUuid, String accountType, CurrencyType coinType, long amount) {
-        if (amount < 0) return false;
+        if (amount < 0) {
+            logCoinOperation(CoinLogOperation.SET, accountUuid, accountType, null, null, coinType, amount, false, "amount must be >= 0");
+            return false;
+        }
         String col = columnName(coinType);
         ensureAccountExist(accountUuid, accountType);
         String sql = "UPDATE economy_accounts SET " + col + " = ? WHERE account_uuid = ? AND account_type = ?";
@@ -152,8 +189,10 @@ public class MCEconomyMySQL implements IMCEconomyDB {
             pstmt.setString(2, accountUuid);
             pstmt.setString(3, accountType);
             pstmt.executeUpdate();
+            logCoinOperation(CoinLogOperation.SET, accountUuid, accountType, null, null, coinType, amount, true, null);
             return true;
         } catch (SQLException e) {
+            logCoinOperation(CoinLogOperation.SET, accountUuid, accountType, null, null, coinType, amount, false, e.getMessage());
             e.printStackTrace();
             return false;
         }
@@ -170,7 +209,10 @@ public class MCEconomyMySQL implements IMCEconomyDB {
      */
     @Override
     public boolean addCoin(String accountUuid, String accountType, CurrencyType coinType, long amount) {
-        if (amount <= 0) return false;
+        if (amount <= 0) {
+            logCoinOperation(CoinLogOperation.ADD, accountUuid, accountType, null, null, coinType, amount, false, "amount must be > 0");
+            return false;
+        }
         ensureAccountExist(accountUuid, accountType);
         String col = columnName(coinType);
         String sql = "UPDATE economy_accounts SET " + col + " = " + col + " + ? WHERE account_uuid = ? AND account_type = ?";
@@ -180,8 +222,10 @@ public class MCEconomyMySQL implements IMCEconomyDB {
             pstmt.setString(2, accountUuid);
             pstmt.setString(3, accountType);
             pstmt.executeUpdate();
+            logCoinOperation(CoinLogOperation.ADD, accountUuid, accountType, null, null, coinType, amount, true, null);
             return true;
         } catch (SQLException e) {
+            logCoinOperation(CoinLogOperation.ADD, accountUuid, accountType, null, null, coinType, amount, false, e.getMessage());
             e.printStackTrace();
             return false;
         }
@@ -198,7 +242,10 @@ public class MCEconomyMySQL implements IMCEconomyDB {
      */
     @Override
     public boolean minusCoin(String accountUuid, String accountType, CurrencyType coinType, long amount) {
-        if (amount <= 0) return false;
+        if (amount <= 0) {
+            logCoinOperation(CoinLogOperation.MINUS, accountUuid, accountType, null, null, coinType, amount, false, "amount must be > 0");
+            return false;
+        }
         String col = columnName(coinType);
         String sql = "UPDATE economy_accounts SET " + col + " = " + col + " - ? " +
                      "WHERE account_uuid = ? AND account_type = ? AND " + col + " >= ?";
@@ -208,8 +255,12 @@ public class MCEconomyMySQL implements IMCEconomyDB {
             pstmt.setString(2, accountUuid);
             pstmt.setString(3, accountType);
             pstmt.setLong(4, amount);
-            return pstmt.executeUpdate() > 0;
+            boolean success = pstmt.executeUpdate() > 0;
+            logCoinOperation(CoinLogOperation.MINUS, accountUuid, accountType, null, null, coinType, amount, success,
+                    success ? null : "insufficient funds or account not found");
+            return success;
         } catch (SQLException e) {
+            logCoinOperation(CoinLogOperation.MINUS, accountUuid, accountType, null, null, coinType, amount, false, e.getMessage());
             e.printStackTrace();
             return false;
         }
@@ -228,7 +279,10 @@ public class MCEconomyMySQL implements IMCEconomyDB {
      */
     @Override
     public boolean sendCoin(String senderUuid, String senderType, String receiverUuid, String receiverType, CurrencyType coinType, long amount) {
-        if (amount <= 0) return false;
+        if (amount <= 0) {
+            logCoinOperation(CoinLogOperation.SEND, senderUuid, senderType, receiverUuid, receiverType, coinType, amount, false, "amount must be > 0");
+            return false;
+        }
         String col = columnName(coinType);
         try (Connection conn = dataSource.getConnection()) {
             boolean prevAutoCommit = conn.getAutoCommit();
@@ -237,11 +291,15 @@ public class MCEconomyMySQL implements IMCEconomyDB {
                 if (!ensureAccountExist(conn, senderUuid, senderType)) {
                     conn.rollback();
                     conn.setAutoCommit(prevAutoCommit);
+                    logCoinOperation(CoinLogOperation.SEND, senderUuid, senderType, receiverUuid, receiverType, coinType, amount, false,
+                            "failed to ensure sender account");
                     return false;
                 }
                 if (!ensureAccountExist(conn, receiverUuid, receiverType)) {
                     conn.rollback();
                     conn.setAutoCommit(prevAutoCommit);
+                    logCoinOperation(CoinLogOperation.SEND, senderUuid, senderType, receiverUuid, receiverType, coinType, amount, false,
+                            "failed to ensure receiver account");
                     return false;
                 }
 
@@ -255,6 +313,8 @@ public class MCEconomyMySQL implements IMCEconomyDB {
                     if (withdraw.executeUpdate() == 0) {
                         conn.rollback();
                         conn.setAutoCommit(prevAutoCommit);
+                        logCoinOperation(CoinLogOperation.SEND, senderUuid, senderType, receiverUuid, receiverType, coinType, amount, false,
+                                "insufficient funds or sender not found");
                         return false;
                     }
                 }
@@ -269,10 +329,12 @@ public class MCEconomyMySQL implements IMCEconomyDB {
 
                 conn.commit();
                 conn.setAutoCommit(prevAutoCommit);
+                logCoinOperation(CoinLogOperation.SEND, senderUuid, senderType, receiverUuid, receiverType, coinType, amount, true, null);
                 return true;
             } catch (SQLException e) {
                 conn.rollback();
                 conn.setAutoCommit(prevAutoCommit);
+                logCoinOperation(CoinLogOperation.SEND, senderUuid, senderType, receiverUuid, receiverType, coinType, amount, false, e.getMessage());
                 throw e;
             }
         } catch (SQLException e) {
@@ -313,6 +375,37 @@ public class MCEconomyMySQL implements IMCEconomyDB {
             pstmt.setString(2, accountType);
             pstmt.executeUpdate();
             return true;
+        }
+    }
+
+    @Override
+    public void logCoinOperation(
+            CoinLogOperation operation,
+            String accountUuid,
+            String accountType,
+            String targetUuid,
+            String targetType,
+            CurrencyType coinType,
+            long amount,
+            boolean success,
+            String message
+    ) {
+        String sql = "INSERT INTO mceconomy_logs (operation, account_uuid, account_type, target_uuid, target_type, currency, amount, success, message) " +
+                     "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)";
+        try (Connection conn = dataSource.getConnection();
+             PreparedStatement pstmt = conn.prepareStatement(sql)) {
+            pstmt.setString(1, operation.name());
+            pstmt.setString(2, accountUuid);
+            pstmt.setString(3, accountType);
+            pstmt.setString(4, targetUuid);
+            pstmt.setString(5, targetType);
+            pstmt.setString(6, coinType.name());
+            pstmt.setLong(7, amount);
+            pstmt.setBoolean(8, success);
+            pstmt.setString(9, message);
+            pstmt.executeUpdate();
+        } catch (SQLException e) {
+            e.printStackTrace();
         }
     }
 
