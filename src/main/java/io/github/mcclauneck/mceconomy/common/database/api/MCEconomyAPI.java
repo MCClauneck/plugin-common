@@ -4,7 +4,6 @@ import com.google.gson.Gson;
 import com.google.gson.JsonObject;
 import com.google.gson.JsonParser;
 import io.github.mcclauneck.mceconomy.api.database.IMCEconomyDB;
-import io.github.mcclauneck.mceconomy.api.enums.CoinLogOperation;
 import io.github.mcclauneck.mceconomy.api.enums.CurrencyType;
 
 import javax.crypto.Mac;
@@ -360,32 +359,6 @@ public class MCEconomyAPI implements IMCEconomyDB, WebSocket.Listener {
 
         JsonObject response = sendWsRequest(payload);
         return response != null && response.has("success") && response.get("success").getAsBoolean();
-    }
-
-    @Override
-    public void logCoinOperation(
-            CoinLogOperation operation,
-            String accountUuid,
-            String accountType,
-            String targetUuid,
-            String targetType,
-            CurrencyType coinType,
-            long amount,
-            boolean success,
-            String message
-    ) {
-        JsonObject payload = new JsonObject();
-        payload.addProperty("action", "log_coin_operation");
-        payload.addProperty("operation", operation.name());
-        payload.addProperty("account_uuid", accountUuid);
-        payload.addProperty("account_type", accountType);
-        payload.addProperty("target_uuid", targetUuid);
-        payload.addProperty("target_type", targetType);
-        payload.addProperty("coin_type", coinType.getName());
-        payload.addProperty("amount", amount);
-        payload.addProperty("success", success);
-        payload.addProperty("message", message);
-        sendWsRequest(payload);
     }
 
     /**
