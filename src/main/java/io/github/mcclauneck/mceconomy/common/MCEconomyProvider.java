@@ -60,6 +60,9 @@ public class MCEconomyProvider {
 
     /**
      * Internal helper to wrap blocking database calls into a CompletableFuture.
+     *
+     * @param supplier blocking supplier to run asynchronously
+     * @return future result from the supplier
      */
     private <T> CompletableFuture<T> runAsync(Supplier<T> supplier) {
         return CompletableFuture.supplyAsync(supplier, asyncExecutor);
@@ -67,56 +70,150 @@ public class MCEconomyProvider {
 
     // --- GETTERS ---
 
+    /**
+     * Asynchronously fetches the default coin balance for an account.
+     *
+     * @param accountUuid unique account identifier
+     * @param accountType logical account type
+     * @return future containing coin balance
+     */
     public CompletableFuture<Long> getCoin(String accountUuid, String accountType) {
         return getCoin(accountUuid, accountType, DEFAULT_COIN);
     }
 
+    /**
+     * Asynchronously fetches a specific currency balance for an account.
+     *
+     * @param accountUuid unique account identifier
+     * @param accountType logical account type
+     * @param coinType    currency to fetch
+     * @return future containing currency balance
+     */
     public CompletableFuture<Long> getCoin(String accountUuid, String accountType, CurrencyType coinType) {
         return runAsync(() -> db.getCoin(accountUuid, accountType, coinType));
     }
 
     // --- SETTERS ---
 
+    /**
+     * Asynchronously sets the default coin balance.
+     *
+     * @param accountUuid unique account identifier
+     * @param accountType logical account type
+     * @param amount      new amount (must be >= 0)
+     * @return future indicating success
+     */
     public CompletableFuture<Boolean> setCoin(String accountUuid, String accountType, long amount) {
         return setCoin(accountUuid, accountType, DEFAULT_COIN, amount);
     }
 
+    /**
+     * Asynchronously sets a specific currency balance.
+     *
+     * @param accountUuid unique account identifier
+     * @param accountType logical account type
+     * @param coinType    currency to set
+     * @param amount      new amount (must be >= 0)
+     * @return future indicating success
+     */
     public CompletableFuture<Boolean> setCoin(String accountUuid, String accountType, CurrencyType coinType, long amount) {
         return runAsync(() -> db.setCoin(accountUuid, accountType, coinType, amount));
     }
 
     // --- ADD ---
 
+    /**
+     * Asynchronously adds to the default coin balance.
+     *
+     * @param accountUuid unique account identifier
+     * @param accountType logical account type
+     * @param amount      delta to add (must be > 0)
+     * @return future indicating success
+     */
     public CompletableFuture<Boolean> addCoin(String accountUuid, String accountType, long amount) {
         return addCoin(accountUuid, accountType, DEFAULT_COIN, amount);
     }
 
+    /**
+     * Asynchronously adds to a specific currency balance.
+     *
+     * @param accountUuid unique account identifier
+     * @param accountType logical account type
+     * @param coinType    currency to add
+     * @param amount      delta to add (must be > 0)
+     * @return future indicating success
+     */
     public CompletableFuture<Boolean> addCoin(String accountUuid, String accountType, CurrencyType coinType, long amount) {
         return runAsync(() -> db.addCoin(accountUuid, accountType, coinType, amount));
     }
 
     // --- MINUS ---
 
+    /**
+     * Asynchronously subtracts from the default coin balance.
+     *
+     * @param accountUuid unique account identifier
+     * @param accountType logical account type
+     * @param amount      delta to subtract (must be > 0)
+     * @return future indicating success
+     */
     public CompletableFuture<Boolean> minusCoin(String accountUuid, String accountType, long amount) {
         return minusCoin(accountUuid, accountType, DEFAULT_COIN, amount);
     }
 
+    /**
+     * Asynchronously subtracts from a specific currency balance.
+     *
+     * @param accountUuid unique account identifier
+     * @param accountType logical account type
+     * @param coinType    currency to subtract
+     * @param amount      delta to subtract (must be > 0)
+     * @return future indicating success
+     */
     public CompletableFuture<Boolean> minusCoin(String accountUuid, String accountType, CurrencyType coinType, long amount) {
         return runAsync(() -> db.minusCoin(accountUuid, accountType, coinType, amount));
     }
 
     // --- SEND ---
 
+    /**
+     * Asynchronously transfers default coin between two accounts.
+     *
+     * @param senderUuid   sender account id
+     * @param senderType   sender account type
+     * @param receiverUuid receiver account id
+     * @param receiverType receiver account type
+     * @param amount       amount to transfer (>0)
+     * @return future indicating success
+     */
     public CompletableFuture<Boolean> sendCoin(String senderUuid, String senderType, String receiverUuid, String receiverType, long amount) {
         return sendCoin(senderUuid, senderType, receiverUuid, receiverType, DEFAULT_COIN, amount);
     }
 
+    /**
+     * Asynchronously transfers a specific currency between two accounts.
+     *
+     * @param senderUuid   sender account id
+     * @param senderType   sender account type
+     * @param receiverUuid receiver account id
+     * @param receiverType receiver account type
+     * @param coinType     currency to transfer
+     * @param amount       amount to transfer (>0)
+     * @return future indicating success
+     */
     public CompletableFuture<Boolean> sendCoin(String senderUuid, String senderType, String receiverUuid, String receiverType, CurrencyType coinType, long amount) {
         return runAsync(() -> db.sendCoin(senderUuid, senderType, receiverUuid, receiverType, coinType, amount));
     }
 
     // --- UTILITY ---
 
+    /**
+     * Asynchronously ensures an account exists.
+     *
+     * @param accountUuid unique account identifier
+     * @param accountType logical account type
+     * @return future indicating success
+     */
     public CompletableFuture<Boolean> ensureAccountExist(String accountUuid, String accountType) {
         return runAsync(() -> db.ensureAccountExist(accountUuid, accountType));
     }
