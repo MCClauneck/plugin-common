@@ -3,7 +3,6 @@ package io.github.mcclauneck.mceconomy.common.database.sqlite;
 import com.zaxxer.hikari.HikariConfig;
 import com.zaxxer.hikari.HikariDataSource;
 import io.github.mcclauneck.mceconomy.api.database.IMCEconomyDB;
-import io.github.mcclauneck.mceconomy.api.enums.CurrencyType;
 
 import java.io.File;
 import java.sql.Connection;
@@ -11,28 +10,27 @@ import java.sql.PreparedStatement;
 import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.sql.Statement;
-import java.util.Objects;
+import java.util.concurrent.CompletableFuture;
 
 /**
- * SQLite implementation for MCEconomy using an explicit database file path.
+ * SQLite-backed implementation of the asynchronous MCEconomy database contract.
  */
 public class MCEconomySQLite implements IMCEconomyDB {
 
     /**
-     * Hikari connection pool for SQLite.
+     * The pooled JDBC data source used for SQLite access.
      */
     private final HikariDataSource dataSource;
 
     /**
-     * Lock object for thread synchronization (SQLite allows only one writer).
+     * The lock used to serialize SQLite work that may contend on writes.
      */
     private final Object lock = new Object();
 
     /**
-     * Constructs a new SQLite database handler.
-     * Creates parent directories and the database file if they do not exist.
+     * Creates a new SQLite economy database adapter.
      *
-     * @param dbPath path to the SQLite database file (absolute or relative)
+     * @param dbPath the SQLite database path
      */
     public MCEconomySQLite(String dbPath) {
         File target = resolvePath(dbPath);
@@ -48,21 +46,22 @@ public class MCEconomySQLite implements IMCEconomyDB {
         config.setMinimumIdle(1);
         config.setConnectionTimeout(30000);
         config.setPoolName("MCEconomy-SQLite-Pool");
+        config.setConnectionInitSql("PRAGMA foreign_keys=ON");
 
         this.dataSource = new HikariDataSource(config);
 
         try {
-            createTable();
+            createTables();
         } catch (SQLException e) {
             e.printStackTrace();
         }
     }
 
     /**
-     * Resolve a potentially relative path to a file.
+     * Resolves the configured database path to an absolute file path.
      *
-     * @param path raw file path from configuration
-     * @return resolved absolute file path
+     * @param path the configured database path
+     * @return the resolved file path
      */
     private File resolvePath(String path) {
         File candidate = new File(path);
@@ -73,243 +72,416 @@ public class MCEconomySQLite implements IMCEconomyDB {
     }
 
     /**
-     * Creates the economy_accounts table if it does not already exist in the SQLite file.
+     * Creates the currencies and account tables used by the new currency-id schema.
      *
      * @throws SQLException if table creation fails
      */
-    private void createTable() throws SQLException {
-        String sql = "CREATE TABLE IF NOT EXISTS economy_accounts (" +
-                     "account_uuid TEXT NOT NULL, " +
-                     "account_type TEXT NOT NULL, " +
-                     "coin INTEGER NOT NULL DEFAULT 0, " +
-                     "copper INTEGER NOT NULL DEFAULT 0, " +
-                     "silver INTEGER NOT NULL DEFAULT 0, " +
-                     "gold INTEGER NOT NULL DEFAULT 0, " +
-                     "PRIMARY KEY (account_uuid, account_type))";
+    private void createTables() throws SQLException {
+        String currencySql = "CREATE TABLE IF NOT EXISTS mceconomy_currencies ("
+                + "id INTEGER PRIMARY KEY AUTOINCREMENT, "
+                + "name_display TEXT NOT NULL, "
+                + "created_at DATETIME DEFAULT CURRENT_TIMESTAMP)";
+        String accountSql = "CREATE TABLE IF NOT EXISTS mceconomy_account ("
+                + "account_type TEXT NOT NULL, "
+                + "account_id TEXT NOT NULL, "
+                + "coin_type INTEGER NOT NULL, "
+                + "amount INTEGER NOT NULL DEFAULT 0, "
+                + "updated_at DATETIME DEFAULT CURRENT_TIMESTAMP, "
+                + "PRIMARY KEY (account_type, account_id, coin_type), "
+                + "FOREIGN KEY (coin_type) REFERENCES mceconomy_currencies(id) ON DELETE CASCADE)";
         try (Connection conn = dataSource.getConnection();
              Statement stmt = conn.createStatement()) {
-            stmt.execute(sql);
-        }
-    }
-
-
-    /**
-     * Ensures an account row exists.
-     *
-     * @param accountUuid unique account identifier
-     * @param accountType logical account type
-     * @return true when present/created; false on error
-     */
-    @Override
-    public boolean ensureAccountExist(String accountUuid, String accountType) {
-        synchronized (lock) {
-            try (Connection conn = dataSource.getConnection()) {
-                return ensureAccountExist(conn, accountUuid, accountType);
-            } catch (SQLException e) {
-                e.printStackTrace();
-                return false;
-            }
+            stmt.execute(currencySql);
+            stmt.execute(accountSql);
         }
     }
 
     /**
-     * Reads a coin balance.
+     * Retrieves the balance for the requested account and currency.
      *
-     * @param accountUuid unique account identifier
-     * @param accountType logical account type
-     * @param coinType    currency to fetch
-     * @return non-negative balance
+     * @param accountType the logical account type
+     * @param accountId the unique account identifier
+     * @param currencyId the currency identifier to read
+     * @return a future containing the current balance
      */
     @Override
-    public long getCoin(String accountUuid, String accountType, CurrencyType coinType) {
-        synchronized (lock) {
-            String col = columnName(coinType);
-            ensureAccountExist(accountUuid, accountType);
-            String sql = "SELECT " + col + " FROM economy_accounts WHERE account_uuid = ? AND account_type = ?";
-            try (Connection conn = dataSource.getConnection();
-                 PreparedStatement pstmt = conn.prepareStatement(sql)) {
-                pstmt.setString(1, accountUuid);
-                pstmt.setString(2, accountType);
-                ResultSet rs = pstmt.executeQuery();
-                if (rs.next()) {
-                    long value = Math.max(0L, rs.getLong(1));
-                    return value;
-                }
-            } catch (SQLException e) {
-                e.printStackTrace();
+    public CompletableFuture<Long> getBalance(String accountId, String accountType, int currencyId) {
+        return CompletableFuture.supplyAsync(() -> {
+            synchronized (lock) {
+                return getBalanceSync(accountType, accountId, currencyId);
             }
-        }
-        return 0;
+        });
     }
 
     /**
-     * Sets a coin balance to an absolute amount.
+     * Sets the balance for the requested account and currency.
      *
-     * @param accountUuid unique account identifier
-     * @param accountType logical account type
-     * @param coinType    currency to set
-     * @param amount      new amount (must be >= 0)
-     * @return true if updated
+     * @param accountType the logical account type
+     * @param accountId the unique account identifier
+     * @param currencyId the currency identifier to update
+     * @param amount the new balance
+     * @return a future that resolves to {@code true} when the update succeeds
      */
     @Override
-    public boolean setCoin(String accountUuid, String accountType, CurrencyType coinType, long amount) {
-        synchronized (lock) {
-            if (amount < 0) {
-                return false;
+    public CompletableFuture<Boolean> setBalance(String accountId, String accountType, int currencyId, long amount) {
+        return CompletableFuture.supplyAsync(() -> {
+            synchronized (lock) {
+                return setBalanceSync(accountType, accountId, currencyId, amount);
             }
-            String col = columnName(coinType);
-            ensureAccountExist(accountUuid, accountType);
-            String sql = "UPDATE economy_accounts SET " + col + " = ? WHERE account_uuid = ? AND account_type = ?";
-            try (Connection conn = dataSource.getConnection();
-                 PreparedStatement pstmt = conn.prepareStatement(sql)) {
-                pstmt.setLong(1, amount);
-                pstmt.setString(2, accountUuid);
-                pstmt.setString(3, accountType);
-                pstmt.executeUpdate();
-                return true;
-            } catch (SQLException e) {
-                e.printStackTrace();
-                return false;
-            }
-        }
+        });
     }
 
     /**
-     * Adds to a coin balance.
+     * Adds to the balance for the requested account and currency.
      *
-     * @param accountUuid unique account identifier
-     * @param accountType logical account type
-     * @param coinType    currency to add
-     * @param amount      delta to add (must be > 0)
-     * @return true if updated
+     * @param accountType the logical account type
+     * @param accountId the unique account identifier
+     * @param currencyId the currency identifier to update
+     * @param amount the amount to add
+     * @return a future that resolves to {@code true} when the update succeeds
      */
     @Override
-    public boolean addCoin(String accountUuid, String accountType, CurrencyType coinType, long amount) {
-        synchronized (lock) {
-            if (amount <= 0) {
-                return false;
+    public CompletableFuture<Boolean> addBalance(String accountId, String accountType, int currencyId, long amount) {
+        return CompletableFuture.supplyAsync(() -> {
+            synchronized (lock) {
+                return addBalanceSync(accountType, accountId, currencyId, amount);
             }
-            String col = columnName(coinType);
-            ensureAccountExist(accountUuid, accountType);
-            String sql = "UPDATE economy_accounts SET " + col + " = " + col + " + ? WHERE account_uuid = ? AND account_type = ?";
-            try (Connection conn = dataSource.getConnection();
-                 PreparedStatement pstmt = conn.prepareStatement(sql)) {
-                pstmt.setLong(1, amount);
-                pstmt.setString(2, accountUuid);
-                pstmt.setString(3, accountType);
-                pstmt.executeUpdate();
-                return true;
-            } catch (SQLException e) {
-                e.printStackTrace();
-                return false;
-            }
-        }
+        });
     }
 
     /**
-     * Subtracts from a coin balance with non-negative guard.
+     * Subtracts from the balance for the requested account and currency.
      *
-     * @param accountUuid unique account identifier
-     * @param accountType logical account type
-     * @param coinType    currency to subtract
-     * @param amount      delta to subtract (must be > 0)
-     * @return true if funds were sufficient and updated
+     * @param accountType the logical account type
+     * @param accountId the unique account identifier
+     * @param currencyId the currency identifier to update
+     * @param amount the amount to subtract
+     * @return a future that resolves to {@code true} when the subtraction succeeds
      */
     @Override
-    public boolean minusCoin(String accountUuid, String accountType, CurrencyType coinType, long amount) {
-        synchronized (lock) {
-            if (amount <= 0) {
-                return false;
+    public CompletableFuture<Boolean> subtractBalance(String accountId, String accountType, int currencyId, long amount) {
+        return CompletableFuture.supplyAsync(() -> {
+            synchronized (lock) {
+                return subtractBalanceSync(accountType, accountId, currencyId, amount);
             }
-            String col = columnName(coinType);
-            String sql = "UPDATE economy_accounts SET " + col + " = " + col + " - ? " +
-                         "WHERE account_uuid = ? AND account_type = ? AND " + col + " >= ?";
-            try (Connection conn = dataSource.getConnection();
-                 PreparedStatement pstmt = conn.prepareStatement(sql)) {
-                pstmt.setLong(1, amount);
-                pstmt.setString(2, accountUuid);
-                pstmt.setString(3, accountType);
-                pstmt.setLong(4, amount);
-                boolean success = pstmt.executeUpdate() > 0;
-                return success;
-            } catch (SQLException e) {
-                e.printStackTrace();
-                return false;
-            }
-        }
+        });
     }
 
     /**
-     * Transfers funds between two accounts transactionally.
+     * Transfers balance between two accounts for the requested currency.
      *
-     * @param senderUuid   sender account id
-     * @param senderType   sender account type
-     * @param receiverUuid receiver account id
-     * @param receiverType receiver account type
-     * @param coinType     currency to transfer
-     * @param amount       amount to transfer (>0)
-     * @return true if transfer committed
+     * @param senderType the sender account type
+     * @param senderId the sender account identifier
+     * @param receiverType the receiver account type
+     * @param receiverId the receiver account identifier
+     * @param currencyId the currency identifier to transfer
+     * @param amount the amount to transfer
+     * @return a future that resolves to {@code true} when the transfer succeeds
      */
     @Override
-    public boolean sendCoin(String senderUuid, String senderType, String receiverUuid, String receiverType, CurrencyType coinType, long amount) {
-        synchronized (lock) {
-            if (amount <= 0) {
-                return false;
+    public CompletableFuture<Boolean> transferBalance(
+            String senderId,
+            String senderType,
+            String receiverId,
+            String receiverType,
+            int currencyId,
+            long amount
+    ) {
+        return CompletableFuture.supplyAsync(() -> {
+            synchronized (lock) {
+                return transferBalanceSync(senderType, senderId, receiverType, receiverId, currencyId, amount);
             }
-            String col = columnName(coinType);
-            try (Connection conn = dataSource.getConnection()) {
-                boolean prevAutoCommit = conn.getAutoCommit();
-                conn.setAutoCommit(false);
-                try {
-                    if (!ensureAccountExist(conn, senderUuid, senderType)) {
-                        conn.rollback();
-                        conn.setAutoCommit(prevAutoCommit);
-                        return false;
-                    }
-                    if (!ensureAccountExist(conn, receiverUuid, receiverType)) {
-                        conn.rollback();
-                        conn.setAutoCommit(prevAutoCommit);
-                        return false;
-                    }
+        });
+    }
 
-                    String withdrawSql = "UPDATE economy_accounts SET " + col + " = " + col + " - ? " +
-                                         "WHERE account_uuid = ? AND account_type = ? AND " + col + " >= ?";
-                    try (PreparedStatement withdraw = conn.prepareStatement(withdrawSql)) {
-                        withdraw.setLong(1, amount);
-                        withdraw.setString(2, senderUuid);
-                        withdraw.setString(3, senderType);
-                        withdraw.setLong(4, amount);
-                        if (withdraw.executeUpdate() == 0) {
-                            conn.rollback();
-                            conn.setAutoCommit(prevAutoCommit);
-                            return false;
-                        }
-                    }
-
-                    String depositSql = "UPDATE economy_accounts SET " + col + " = " + col + " + ? WHERE account_uuid = ? AND account_type = ?";
-                    try (PreparedStatement deposit = conn.prepareStatement(depositSql)) {
-                        deposit.setLong(1, amount);
-                        deposit.setString(2, receiverUuid);
-                        deposit.setString(3, receiverType);
-                        deposit.executeUpdate();
-                    }
-
-                    conn.commit();
-                    conn.setAutoCommit(prevAutoCommit);
-                    return true;
+    /**
+     * Ensures the requested account and currency row exists.
+     *
+     * @param accountType the logical account type
+     * @param accountId the unique account identifier
+     * @param currencyId the currency identifier to ensure
+     * @return a future that resolves to {@code true} when the row exists
+     */
+    @Override
+    public CompletableFuture<Boolean> ensureAccountExists(String accountId, String accountType, int currencyId) {
+        return CompletableFuture.supplyAsync(() -> {
+            synchronized (lock) {
+                try (Connection conn = dataSource.getConnection()) {
+                    return ensureAccountExists(conn, accountType, accountId, currencyId);
                 } catch (SQLException e) {
-                    try { conn.rollback(); } catch (SQLException ignored) {}
-                    throw e;
+                    e.printStackTrace();
+                    return false;
                 }
-            } catch (SQLException e) {
-                e.printStackTrace();
-                return false;
             }
+        });
+    }
+
+    /**
+     * Reads the current balance using a direct JDBC query.
+     *
+     * @param accountType the logical account type
+     * @param accountId the unique account identifier
+     * @param currencyId the currency identifier to read
+     * @return the current balance, or {@code 0} when no row is available
+     */
+    private long getBalanceSync(String accountType, String accountId, int currencyId) {
+        if (currencyId <= 0) {
+            return 0L;
+        }
+
+        try (Connection conn = dataSource.getConnection()) {
+            if (!ensureAccountExists(conn, accountType, accountId, currencyId)) {
+                return 0L;
+            }
+
+            String sql = "SELECT amount FROM mceconomy_account WHERE account_type = ? AND account_id = ? AND coin_type = ?";
+            try (PreparedStatement pstmt = conn.prepareStatement(sql)) {
+                pstmt.setString(1, accountType);
+                pstmt.setString(2, accountId);
+                pstmt.setInt(3, currencyId);
+                try (ResultSet rs = pstmt.executeQuery()) {
+                    return rs.next() ? Math.max(0L, rs.getLong("amount")) : 0L;
+                }
+            }
+        } catch (SQLException e) {
+            e.printStackTrace();
+            return 0L;
         }
     }
 
     /**
-     * Closes the SQLite data source.
+     * Stores an absolute balance using a direct JDBC update.
+     *
+     * @param accountType the logical account type
+     * @param accountId the unique account identifier
+     * @param currencyId the currency identifier to update
+     * @param amount the new balance
+     * @return {@code true} when the update succeeds
+     */
+    private boolean setBalanceSync(String accountType, String accountId, int currencyId, long amount) {
+        if (amount < 0 || currencyId <= 0) {
+            return false;
+        }
+
+        try (Connection conn = dataSource.getConnection()) {
+            if (!ensureAccountExists(conn, accountType, accountId, currencyId)) {
+                return false;
+            }
+
+            String sql = "UPDATE mceconomy_account SET amount = ?, updated_at = CURRENT_TIMESTAMP "
+                    + "WHERE account_type = ? AND account_id = ? AND coin_type = ?";
+            try (PreparedStatement pstmt = conn.prepareStatement(sql)) {
+                pstmt.setLong(1, amount);
+                pstmt.setString(2, accountType);
+                pstmt.setString(3, accountId);
+                pstmt.setInt(4, currencyId);
+                pstmt.executeUpdate();
+                return true;
+            }
+        } catch (SQLException e) {
+            e.printStackTrace();
+            return false;
+        }
+    }
+
+    /**
+     * Increments the current balance using a direct JDBC update.
+     *
+     * @param accountType the logical account type
+     * @param accountId the unique account identifier
+     * @param currencyId the currency identifier to update
+     * @param amount the amount to add
+     * @return {@code true} when the update succeeds
+     */
+    private boolean addBalanceSync(String accountType, String accountId, int currencyId, long amount) {
+        if (amount <= 0 || currencyId <= 0) {
+            return false;
+        }
+
+        try (Connection conn = dataSource.getConnection()) {
+            if (!ensureAccountExists(conn, accountType, accountId, currencyId)) {
+                return false;
+            }
+
+            String sql = "UPDATE mceconomy_account SET amount = amount + ?, updated_at = CURRENT_TIMESTAMP "
+                    + "WHERE account_type = ? AND account_id = ? AND coin_type = ?";
+            try (PreparedStatement pstmt = conn.prepareStatement(sql)) {
+                pstmt.setLong(1, amount);
+                pstmt.setString(2, accountType);
+                pstmt.setString(3, accountId);
+                pstmt.setInt(4, currencyId);
+                pstmt.executeUpdate();
+                return true;
+            }
+        } catch (SQLException e) {
+            e.printStackTrace();
+            return false;
+        }
+    }
+
+    /**
+     * Decrements the current balance using a guarded JDBC update.
+     *
+     * @param accountType the logical account type
+     * @param accountId the unique account identifier
+     * @param currencyId the currency identifier to update
+     * @param amount the amount to subtract
+     * @return {@code true} when enough balance exists and the update succeeds
+     */
+    private boolean subtractBalanceSync(String accountType, String accountId, int currencyId, long amount) {
+        if (amount <= 0 || currencyId <= 0) {
+            return false;
+        }
+
+        try (Connection conn = dataSource.getConnection()) {
+            if (!ensureAccountExists(conn, accountType, accountId, currencyId)) {
+                return false;
+            }
+
+            String sql = "UPDATE mceconomy_account SET amount = amount - ?, updated_at = CURRENT_TIMESTAMP "
+                    + "WHERE account_type = ? AND account_id = ? AND coin_type = ? AND amount >= ?";
+            try (PreparedStatement pstmt = conn.prepareStatement(sql)) {
+                pstmt.setLong(1, amount);
+                pstmt.setString(2, accountType);
+                pstmt.setString(3, accountId);
+                pstmt.setInt(4, currencyId);
+                pstmt.setLong(5, amount);
+                return pstmt.executeUpdate() > 0;
+            }
+        } catch (SQLException e) {
+            e.printStackTrace();
+            return false;
+        }
+    }
+
+    /**
+     * Performs a transactional transfer between two accounts.
+     *
+     * @param senderType the sender account type
+     * @param senderId the sender account identifier
+     * @param receiverType the receiver account type
+     * @param receiverId the receiver account identifier
+     * @param currencyId the currency identifier to transfer
+     * @param amount the amount to transfer
+     * @return {@code true} when the transaction commits successfully
+     */
+    private boolean transferBalanceSync(
+            String senderType,
+            String senderId,
+            String receiverType,
+            String receiverId,
+            int currencyId,
+            long amount
+    ) {
+        if (amount <= 0 || currencyId <= 0) {
+            return false;
+        }
+
+        try (Connection conn = dataSource.getConnection()) {
+            boolean previousAutoCommit = conn.getAutoCommit();
+            conn.setAutoCommit(false);
+            try {
+                if (!ensureAccountExists(conn, senderType, senderId, currencyId)
+                        || !ensureAccountExists(conn, receiverType, receiverId, currencyId)) {
+                    conn.rollback();
+                    return false;
+                }
+
+                String withdrawSql = "UPDATE mceconomy_account SET amount = amount - ?, updated_at = CURRENT_TIMESTAMP "
+                        + "WHERE account_type = ? AND account_id = ? AND coin_type = ? AND amount >= ?";
+                try (PreparedStatement withdraw = conn.prepareStatement(withdrawSql)) {
+                    withdraw.setLong(1, amount);
+                    withdraw.setString(2, senderType);
+                    withdraw.setString(3, senderId);
+                    withdraw.setInt(4, currencyId);
+                    withdraw.setLong(5, amount);
+                    if (withdraw.executeUpdate() == 0) {
+                        conn.rollback();
+                        return false;
+                    }
+                }
+
+                String depositSql = "UPDATE mceconomy_account SET amount = amount + ?, updated_at = CURRENT_TIMESTAMP "
+                        + "WHERE account_type = ? AND account_id = ? AND coin_type = ?";
+                try (PreparedStatement deposit = conn.prepareStatement(depositSql)) {
+                    deposit.setLong(1, amount);
+                    deposit.setString(2, receiverType);
+                    deposit.setString(3, receiverId);
+                    deposit.setInt(4, currencyId);
+                    deposit.executeUpdate();
+                }
+
+                conn.commit();
+                return true;
+            } catch (SQLException e) {
+                try {
+                    conn.rollback();
+                } catch (SQLException ignored) {
+                }
+                throw e;
+            } finally {
+                conn.setAutoCommit(previousAutoCommit);
+            }
+        } catch (SQLException e) {
+            e.printStackTrace();
+            return false;
+        }
+    }
+
+    /**
+     * Ensures the account row exists for the requested account and currency.
+     *
+     * @param conn the active SQL connection
+     * @param accountType the logical account type
+     * @param accountId the unique account identifier
+     * @param currencyId the currency identifier to ensure
+     * @return {@code true} when the account row exists
+     * @throws SQLException if the upsert fails
+     */
+    private boolean ensureAccountExists(Connection conn, String accountType, String accountId, int currencyId) throws SQLException {
+        if (currencyId <= 0) {
+            return false;
+        }
+
+        ensureCurrencyExists(conn, currencyId);
+        String sql = "INSERT OR IGNORE INTO mceconomy_account (account_type, account_id, coin_type, amount) VALUES (?, ?, ?, 0)";
+        try (PreparedStatement pstmt = conn.prepareStatement(sql)) {
+            pstmt.setString(1, accountType);
+            pstmt.setString(2, accountId);
+            pstmt.setInt(3, currencyId);
+            pstmt.executeUpdate();
+            return true;
+        }
+    }
+
+    /**
+     * Ensures the referenced currency row exists before account writes occur.
+     *
+     * @param conn the active SQL connection
+     * @param currencyId the currency identifier to ensure
+     * @throws SQLException if the currency upsert fails
+     */
+    private void ensureCurrencyExists(Connection conn, int currencyId) throws SQLException {
+        String sql = "INSERT OR IGNORE INTO mceconomy_currencies (id, name_display) VALUES (?, ?)";
+        try (PreparedStatement pstmt = conn.prepareStatement(sql)) {
+            pstmt.setInt(1, currencyId);
+            pstmt.setString(2, defaultCurrencyName(currencyId));
+            pstmt.executeUpdate();
+        }
+    }
+
+    /**
+     * Builds the fallback display name used for auto-created currency rows.
+     *
+     * @param currencyId the currency identifier
+     * @return the generated display name
+     */
+    private String defaultCurrencyName(int currencyId) {
+        return "Currency " + currencyId;
+    }
+
+    /**
+     * Closes the JDBC connection pool.
      */
     @Override
     public void close() {
@@ -319,40 +491,4 @@ public class MCEconomySQLite implements IMCEconomyDB {
             }
         }
     }
-
-    /**
-     * Resolves the trusted SQL column name for a currency type.
-     *
-     * @param type currency enum value
-     * @return trusted SQL column name
-     */
-    private String columnName(CurrencyType type) {
-        Objects.requireNonNull(type, "currency type");
-        return switch (type) {
-            case COIN -> "coin";
-            case COPPER -> "copper";
-            case SILVER -> "silver";
-            case GOLD -> "gold";
-        };
-    }
-
-    /**
-     * Insert-or-ignore using an existing connection to participate in transactions.
-     *
-     * @param conn        active SQL connection
-     * @param accountUuid unique account identifier
-     * @param accountType logical account type
-     * @return true when present/created
-     * @throws SQLException if insert operation fails
-     */
-    private boolean ensureAccountExist(Connection conn, String accountUuid, String accountType) throws SQLException {
-        String sql = "INSERT OR IGNORE INTO economy_accounts (account_uuid, account_type) VALUES (?, ?)";
-        try (PreparedStatement pstmt = conn.prepareStatement(sql)) {
-            pstmt.setString(1, accountUuid);
-            pstmt.setString(2, accountType);
-            pstmt.executeUpdate();
-            return true;
-        }
-    }
-
 }
