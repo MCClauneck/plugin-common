@@ -4,7 +4,6 @@ import com.google.gson.Gson;
 import com.google.gson.JsonObject;
 import com.google.gson.JsonParser;
 import io.github.mcclauneck.mceconomy.api.database.IMCEconomyDB;
-import io.github.mcclauneck.mceconomy.api.enums.CurrencyType;
 
 import javax.crypto.Mac;
 import javax.crypto.spec.SecretKeySpec;
@@ -21,50 +20,50 @@ import java.util.concurrent.CompletionStage;
 import java.util.concurrent.TimeUnit;
 
 /**
- * WebSocket API implementation for MCEconomy.
+ * WebSocket-backed remote implementation of the asynchronous economy database API.
  */
 public class MCEconomyAPI implements IMCEconomyDB, WebSocket.Listener {
 
     /**
-     * The fully resolved WebSocket API endpoint URL.
-     */
-    private final String apiUrl;
-
-    /**
-     * The shared API token used for authentication and request signing.
-     */
-    private final String apiToken;
-
-    /**
-     * Gson serializer/deserializer for payload conversion.
-     */
-    private final Gson gson;
-
-    /**
-     * HMAC algorithm used to sign request payloads.
+     * The HMAC algorithm used to sign outgoing payloads.
      */
     private static final String HMAC_ALGO = "HmacSHA256";
 
     /**
-     * Active WebSocket connection instance.
+     * The fully resolved WebSocket endpoint URL.
      */
-    private WebSocket webSocket;
+    private final String apiUrl;
 
     /**
-     * Maps request IDs to waiting futures for correlated async responses.
+     * The shared API token used for authentication and signing.
+     */
+    private final String apiToken;
+
+    /**
+     * The JSON serializer used for outbound payloads.
+     */
+    private final Gson gson;
+
+    /**
+     * The map of pending request identifiers to their completion futures.
      */
     private final ConcurrentHashMap<String, CompletableFuture<JsonObject>> pendingRequests;
 
     /**
-     * Temporary buffer for fragmented incoming WebSocket frames.
+     * The temporary message buffer used when fragmented WebSocket frames arrive.
      */
     private final StringBuilder messageBuffer;
 
     /**
-     * Constructs a new WebSocket database handler.
+     * The active WebSocket connection.
+     */
+    private WebSocket webSocket;
+
+    /**
+     * Creates a new WebSocket-backed economy database adapter.
      *
-     * @param apiUrl   The fully resolved WebSocket URL (e.g., ws://api.domain.com/ws)
-     * @param apiToken The authorization token for the API
+     * @param apiUrl the WebSocket endpoint URL
+     * @param apiToken the shared API token
      */
     public MCEconomyAPI(String apiUrl, String apiToken) {
         this.apiUrl = apiUrl;
@@ -72,12 +71,11 @@ public class MCEconomyAPI implements IMCEconomyDB, WebSocket.Listener {
         this.gson = new Gson();
         this.pendingRequests = new ConcurrentHashMap<>();
         this.messageBuffer = new StringBuilder();
-
         connect();
     }
 
     /**
-     * Initializes and connects the WebSocket.
+     * Opens the WebSocket connection to the configured API endpoint.
      */
     private void connect() {
         HttpClient client = HttpClient.newBuilder().build();
@@ -87,10 +85,8 @@ public class MCEconomyAPI implements IMCEconomyDB, WebSocket.Listener {
                 .join();
     }
 
-    // --- WebSocket Listener Methods ---
-
     /**
-     * Called when the WebSocket connection is opened.
+     * Handles the WebSocket open event.
      *
      * @param webSocket the opened WebSocket connection
      */
@@ -101,33 +97,30 @@ public class MCEconomyAPI implements IMCEconomyDB, WebSocket.Listener {
     }
 
     /**
-     * Handles incoming WebSocket text frames and resolves pending requests.
+     * Handles inbound text frames and resolves the matching pending request.
      *
      * @param webSocket the active WebSocket connection
-     * @param data       text frame content
-     * @param last       whether this frame is the final fragment of the message
-     * @return completion stage for the listener callback
+     * @param data the received text fragment
+     * @param last whether the fragment completes the message
+     * @return the completion stage for the listener callback
      */
     @Override
     public CompletionStage<?> onText(WebSocket webSocket, CharSequence data, boolean last) {
         synchronized (messageBuffer) {
-            // Accumulate data because WebSocket messages can arrive in fragmented parts
             messageBuffer.append(data);
-
             if (last) {
                 try {
                     JsonObject response = JsonParser.parseString(messageBuffer.toString()).getAsJsonObject();
                     if (response.has("request_id")) {
-                        String reqId = response.get("request_id").getAsString();
-                        CompletableFuture<JsonObject> future = pendingRequests.remove(reqId);
+                        CompletableFuture<JsonObject> future = pendingRequests.remove(response.get("request_id").getAsString());
                         if (future != null) {
-                            future.complete(response); // This unblocks the waiting thread
+                            future.complete(response);
                         }
                     }
                 } catch (Exception e) {
                     System.err.println("[MCEconomy API] Failed to parse incoming WebSocket message: " + e.getMessage());
                 } finally {
-                    messageBuffer.setLength(0); // Clear buffer for the next message
+                    messageBuffer.setLength(0);
                 }
             }
         }
@@ -137,17 +130,16 @@ public class MCEconomyAPI implements IMCEconomyDB, WebSocket.Listener {
     }
 
     /**
-     * Called when the WebSocket is closed and clears pending requests.
+     * Handles the WebSocket close event and completes all pending requests.
      *
-     * @param webSocket  the closed WebSocket connection
-     * @param statusCode close status code
-     * @param reason     close reason text
-     * @return completion stage for the listener callback
+     * @param webSocket the closed WebSocket connection
+     * @param statusCode the close status code
+     * @param reason the close reason
+     * @return the completion stage for the listener callback
      */
     @Override
     public CompletionStage<?> onClose(WebSocket webSocket, int statusCode, String reason) {
         System.err.println("[MCEconomy API] WebSocket closed: " + statusCode + " - " + reason);
-        // Fail all pending requests so they don't hang forever
         for (CompletableFuture<JsonObject> future : pendingRequests.values()) {
             future.complete(null);
         }
@@ -156,10 +148,10 @@ public class MCEconomyAPI implements IMCEconomyDB, WebSocket.Listener {
     }
 
     /**
-     * Called when a WebSocket error occurs.
+     * Handles WebSocket transport errors.
      *
      * @param webSocket the active WebSocket connection
-     * @param error     the error thrown by the WebSocket client
+     * @param error the transport error
      */
     @Override
     public void onError(WebSocket webSocket, Throwable error) {
@@ -167,16 +159,23 @@ public class MCEconomyAPI implements IMCEconomyDB, WebSocket.Listener {
         WebSocket.Listener.super.onError(webSocket, error);
     }
 
-    // --- Core Request Logic ---
+    /**
+     * Sends a request on a background thread and resolves with the raw JSON response.
+     *
+     * @param payload the payload to send
+     * @return a future containing the raw response, or {@code null} on timeout
+     */
+    private CompletableFuture<JsonObject> sendWsRequestAsync(JsonObject payload) {
+        return CompletableFuture.supplyAsync(() -> sendWsRequest(payload));
+    }
 
     /**
-     * Sends the JSON payload and blocks until the specific response arrives.
+     * Sends a request synchronously and waits for the correlated response.
      *
-     * @param payload request payload to send
-     * @return JSON response object, or null if timeout/failure occurs
+     * @param payload the payload to send
+     * @return the raw JSON response, or {@code null} on timeout or failure
      */
     private JsonObject sendWsRequest(JsonObject payload) {
-        // Ensure connection is active (very basic check, you may want a robust reconnect loop)
         if (this.webSocket == null || this.webSocket.isOutputClosed()) {
             connect();
         }
@@ -194,13 +193,9 @@ public class MCEconomyAPI implements IMCEconomyDB, WebSocket.Listener {
 
         CompletableFuture<JsonObject> future = new CompletableFuture<>();
         pendingRequests.put(requestId, future);
-
-        // Send over WebSocket
         this.webSocket.sendText(gson.toJson(payload), true);
 
         try {
-            // Block this thread for up to 5 seconds waiting for the API response.
-            // If it takes longer than 5 seconds, it will throw a TimeoutException.
             return future.get(5, TimeUnit.SECONDS);
         } catch (Exception e) {
             System.err.println("[MCEconomy API] Request timed out or failed: " + requestId);
@@ -210,30 +205,32 @@ public class MCEconomyAPI implements IMCEconomyDB, WebSocket.Listener {
     }
 
     /**
-     * Builds a standard request payload.
+     * Builds a standard single-account payload with ordered account fields.
      *
-     * @param action      action name to execute
-     * @param accountUuid account UUID
-     * @param accountType account type
-     * @param coinType    optional currency type
-     * @param amount      amount to include (ignored when negative)
-     * @return constructed payload object
+     * @param action the action name to execute remotely
+     * @param accountType the logical account type
+     * @param accountId the unique account identifier
+     * @param currencyId the currency identifier
+     * @param amount the optional amount payload, or {@code null} when unused
+     * @return the constructed JSON payload
      */
-    private JsonObject buildStandardPayload(String action, String accountUuid, String accountType, CurrencyType coinType, long amount) {
+    private JsonObject buildBalancePayload(String action, String accountType, String accountId, int currencyId, Long amount) {
         JsonObject json = new JsonObject();
         json.addProperty("action", action);
-        json.addProperty("account_uuid", accountUuid);
         json.addProperty("account_type", accountType);
-        if (coinType != null) json.addProperty("coin_type", coinType.getName());
-        if (amount >= 0) json.addProperty("amount", amount);
+        json.addProperty("account_id", accountId);
+        json.addProperty("currency_id", currencyId);
+        if (amount != null) {
+            json.addProperty("amount", amount);
+        }
         return json;
     }
 
     /**
-     * Computes an HMAC signature for the payload to mitigate replay/tampering (server must validate).
+     * Computes the HMAC signature for the provided payload.
      *
-     * @param payload payload to sign
-     * @return Base64-encoded signature string, or null on failure
+     * @param payload the payload to sign
+     * @return the Base64-encoded signature, or {@code null} when signing fails
      */
     private String signPayload(JsonObject payload) {
         try {
@@ -247,122 +244,144 @@ public class MCEconomyAPI implements IMCEconomyDB, WebSocket.Listener {
         }
     }
 
-    // --- IMCEconomyDB Implementation ---
-
     /**
-     * Ensures an account row exists via WebSocket.
+     * Retrieves the balance for the requested account and currency identifier.
      *
-     * @param accountUuid unique account identifier
-     * @param accountType logical account type
-     * @return true when present/created; false on error
+     * @param accountId the unique account identifier
+     * @param accountType the logical account type
+     * @param currencyId the currency identifier to read
+     * @return a future containing the remote balance value
      */
     @Override
-    public boolean ensureAccountExist(String accountUuid, String accountType) {
-        JsonObject payload = buildStandardPayload("ensure_account", accountUuid, accountType, null, -1);
-        JsonObject response = sendWsRequest(payload);
-        return response != null && response.has("success") && response.get("success").getAsBoolean();
+    public CompletableFuture<Long> getBalance(String accountId, String accountType, int currencyId) {
+        JsonObject payload = buildBalancePayload("get_balance", accountType, accountId, currencyId, null);
+        return sendWsRequestAsync(payload).thenApply(response -> {
+            if (response != null && response.has("success") && response.get("success").getAsBoolean()) {
+                return response.has("data") ? response.get("data").getAsLong() : 0L;
+            }
+            return 0L;
+        });
     }
 
     /**
-     * Reads a coin balance via WebSocket.
+     * Sets the balance for the requested account and currency identifier.
      *
-     * @param accountUuid unique account identifier
-     * @param accountType logical account type
-     * @param coinType    currency to fetch
-     * @return non-negative balance
+     * @param accountId the unique account identifier
+     * @param accountType the logical account type
+     * @param currencyId the currency identifier to update
+     * @param amount the new balance
+     * @return a future that resolves to {@code true} when the remote update succeeds
      */
     @Override
-    public long getCoin(String accountUuid, String accountType, CurrencyType coinType) {
-        JsonObject payload = buildStandardPayload("get_coin", accountUuid, accountType, coinType, -1);
-        JsonObject response = sendWsRequest(payload);
-        
-        if (response != null && response.has("success") && response.get("success").getAsBoolean()) {
-            return response.has("data") ? response.get("data").getAsLong() : 0L;
+    public CompletableFuture<Boolean> setBalance(String accountId, String accountType, int currencyId, long amount) {
+        if (amount < 0 || currencyId <= 0) {
+            return CompletableFuture.completedFuture(false);
         }
-        return 0L;
+        JsonObject payload = buildBalancePayload("set_balance", accountType, accountId, currencyId, amount);
+        return sendWsRequestAsync(payload).thenApply(this::isSuccessfulResponse);
     }
 
     /**
-     * Sets a coin balance to an absolute amount via WebSocket.
+     * Adds to the balance for the requested account and currency identifier.
      *
-     * @param accountUuid unique account identifier
-     * @param accountType logical account type
-     * @param coinType    currency to set
-     * @param amount      new amount (must be >= 0)
-     * @return true if updated
+     * @param accountId the unique account identifier
+     * @param accountType the logical account type
+     * @param currencyId the currency identifier to update
+     * @param amount the amount to add
+     * @return a future that resolves to {@code true} when the remote update succeeds
      */
     @Override
-    public boolean setCoin(String accountUuid, String accountType, CurrencyType coinType, long amount) {
-        if (amount < 0) return false;
-        JsonObject payload = buildStandardPayload("set_coin", accountUuid, accountType, coinType, amount);
-        JsonObject response = sendWsRequest(payload);
-        return response != null && response.has("success") && response.get("success").getAsBoolean();
+    public CompletableFuture<Boolean> addBalance(String accountId, String accountType, int currencyId, long amount) {
+        if (amount <= 0 || currencyId <= 0) {
+            return CompletableFuture.completedFuture(false);
+        }
+        JsonObject payload = buildBalancePayload("add_balance", accountType, accountId, currencyId, amount);
+        return sendWsRequestAsync(payload).thenApply(this::isSuccessfulResponse);
     }
 
     /**
-     * Adds to a coin balance via WebSocket.
+     * Subtracts from the balance for the requested account and currency identifier.
      *
-     * @param accountUuid unique account identifier
-     * @param accountType logical account type
-     * @param coinType    currency to add
-     * @param amount      delta to add (must be > 0)
-     * @return true if updated
+     * @param accountId the unique account identifier
+     * @param accountType the logical account type
+     * @param currencyId the currency identifier to update
+     * @param amount the amount to subtract
+     * @return a future that resolves to {@code true} when the remote update succeeds
      */
     @Override
-    public boolean addCoin(String accountUuid, String accountType, CurrencyType coinType, long amount) {
-        if (amount <= 0) return false;
-        JsonObject payload = buildStandardPayload("add_coin", accountUuid, accountType, coinType, amount);
-        JsonObject response = sendWsRequest(payload);
-        return response != null && response.has("success") && response.get("success").getAsBoolean();
+    public CompletableFuture<Boolean> subtractBalance(String accountId, String accountType, int currencyId, long amount) {
+        if (amount <= 0 || currencyId <= 0) {
+            return CompletableFuture.completedFuture(false);
+        }
+        JsonObject payload = buildBalancePayload("subtract_balance", accountType, accountId, currencyId, amount);
+        return sendWsRequestAsync(payload).thenApply(this::isSuccessfulResponse);
     }
 
     /**
-     * Subtracts from a coin balance with non-negative guard via WebSocket.
+     * Transfers the requested currency between two accounts.
      *
-     * @param accountUuid unique account identifier
-     * @param accountType logical account type
-     * @param coinType    currency to subtract
-     * @param amount      delta to subtract (must be > 0)
-     * @return true if funds were sufficient and updated
+     * @param senderId the sender account identifier
+     * @param senderType the sender account type
+     * @param receiverId the receiver account identifier
+     * @param receiverType the receiver account type
+     * @param currencyId the currency identifier to transfer
+     * @param amount the amount to transfer
+     * @return a future that resolves to {@code true} when the remote transfer succeeds
      */
     @Override
-    public boolean minusCoin(String accountUuid, String accountType, CurrencyType coinType, long amount) {
-        if (amount <= 0) return false;
-        JsonObject payload = buildStandardPayload("minus_coin", accountUuid, accountType, coinType, amount);
-        JsonObject response = sendWsRequest(payload);
-        return response != null && response.has("success") && response.get("success").getAsBoolean();
-    }
+    public CompletableFuture<Boolean> transferBalance(
+            String senderId,
+            String senderType,
+            String receiverId,
+            String receiverType,
+            int currencyId,
+            long amount
+    ) {
+        if (amount <= 0 || currencyId <= 0) {
+            return CompletableFuture.completedFuture(false);
+        }
 
-    /**
-     * Transfers funds between two accounts via WebSocket.
-     *
-     * @param senderUuid   sender account id
-     * @param senderType   sender account type
-     * @param receiverUuid receiver account id
-     * @param receiverType receiver account type
-     * @param coinType     currency to transfer
-     * @param amount       amount to transfer (>0)
-     * @return true if transfer committed
-     */
-    @Override
-    public boolean sendCoin(String senderUuid, String senderType, String receiverUuid, String receiverType, CurrencyType coinType, long amount) {
-        if (amount <= 0) return false;
-        
         JsonObject payload = new JsonObject();
-        payload.addProperty("action", "send_coin");
-        payload.addProperty("sender_uuid", senderUuid);
+        payload.addProperty("action", "transfer_balance");
         payload.addProperty("sender_type", senderType);
-        payload.addProperty("receiver_uuid", receiverUuid);
+        payload.addProperty("sender_id", senderId);
         payload.addProperty("receiver_type", receiverType);
-        payload.addProperty("coin_type", coinType.getName());
+        payload.addProperty("receiver_id", receiverId);
+        payload.addProperty("currency_id", currencyId);
         payload.addProperty("amount", amount);
 
-        JsonObject response = sendWsRequest(payload);
+        return sendWsRequestAsync(payload).thenApply(this::isSuccessfulResponse);
+    }
+
+    /**
+     * Ensures the requested account and currency row exists remotely.
+     *
+     * @param accountId the unique account identifier
+     * @param accountType the logical account type
+     * @param currencyId the currency identifier to ensure
+     * @return a future that resolves to {@code true} when the remote row exists
+     */
+    @Override
+    public CompletableFuture<Boolean> ensureAccountExists(String accountId, String accountType, int currencyId) {
+        if (currencyId <= 0) {
+            return CompletableFuture.completedFuture(false);
+        }
+        JsonObject payload = buildBalancePayload("ensure_account_exists", accountType, accountId, currencyId, null);
+        return sendWsRequestAsync(payload).thenApply(this::isSuccessfulResponse);
+    }
+
+    /**
+     * Evaluates whether the provided JSON response represents success.
+     *
+     * @param response the raw JSON response
+     * @return {@code true} when the response contains a successful result
+     */
+    private boolean isSuccessfulResponse(JsonObject response) {
         return response != null && response.has("success") && response.get("success").getAsBoolean();
     }
 
     /**
-     * Closes the WebSocket connection.
+     * Closes the active WebSocket connection.
      */
     @Override
     public void close() {

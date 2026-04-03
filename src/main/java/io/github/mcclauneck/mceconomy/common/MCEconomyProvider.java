@@ -1,230 +1,231 @@
 package io.github.mcclauneck.mceconomy.common;
 
 import io.github.mcclauneck.mceconomy.api.database.IMCEconomyDB;
-import io.github.mcclauneck.mceconomy.api.enums.CurrencyType;
 
+import java.util.Objects;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.Executor;
-import java.util.function.Supplier;
 
 /**
- * High-level provider that wraps the underlying database implementation.
- * <p>
- * Platform-agnostic and ready for third-party use; relies on an injected {@link Executor}
- * for async work and an {@link IMCEconomyDB} implementation for persistence.
- * </p>
+ * High-level provider that exposes the active asynchronous economy database implementation.
  */
 public class MCEconomyProvider {
 
     /**
-     * The singleton instance of the provider.
+     * The default currency identifier used by convenience overloads.
+     */
+    public static final int DEFAULT_CURRENCY_ID = 1;
+
+    /**
+     * The active singleton provider instance.
      */
     private static MCEconomyProvider instance;
 
     /**
-     * The underlying database implementation (e.g., MySQL or SQLite).
+     * The underlying asynchronous database implementation.
      */
     private final IMCEconomyDB db;
 
     /**
-     * The platform-specific executor used to run database tasks off the main thread.
-     */
-    private final Executor asyncExecutor;
-
-    /**
-     * The default currency identifier used when no specific coin type is provided.
-     */
-    private static final CurrencyType DEFAULT_COIN = CurrencyType.COIN;
-
-    /**
-     * Initializes the provider with a database implementation and an async executor.
-     * Sets the static singleton instance upon creation.
+     * Creates a new provider with the supplied asynchronous database implementation.
      *
-     * @param db            The database logic implementation.
-     * @param asyncExecutor The executor used for asynchronous operations.
+     * @param db the database implementation used for all economy operations
      */
-    public MCEconomyProvider(IMCEconomyDB db, Executor asyncExecutor) {
-        this.db = db;
-        this.asyncExecutor = asyncExecutor;
-        instance = this; // Set the singleton instance
+    public MCEconomyProvider(IMCEconomyDB db) {
+        this.db = Objects.requireNonNull(db, "db");
+        instance = this;
     }
 
     /**
-     * Gets the active singleton instance of the MCEconomyProvider.
+     * Creates a new provider while preserving the previous constructor shape.
+     * <p>
+     * The executor is ignored because the new database contract is already asynchronous.
+     * </p>
      *
-     * @return The active MCEconomyProvider instance, or null if not initialized.
+     * @param db the database implementation used for all economy operations
+     * @param asyncExecutor the legacy executor argument retained for compatibility
+     */
+    public MCEconomyProvider(IMCEconomyDB db, Executor asyncExecutor) {
+        this(db);
+    }
+
+    /**
+     * Returns the currently registered provider instance.
+     *
+     * @return the active provider, or {@code null} when one has not been created yet
      */
     public static MCEconomyProvider getInstance() {
         return instance;
     }
 
     /**
-     * Internal helper to wrap blocking database calls into a CompletableFuture.
+     * Retrieves the default currency balance for the requested account.
      *
-     * @param supplier blocking supplier to run asynchronously
-     * @return future result from the supplier
+     * @param accountId the unique account identifier
+     * @param accountType the logical account type
+     * @return a future containing the balance for the default currency
      */
-    private <T> CompletableFuture<T> runAsync(Supplier<T> supplier) {
-        return CompletableFuture.supplyAsync(supplier, asyncExecutor);
-    }
-
-    // --- GETTERS ---
-
-    /**
-     * Asynchronously fetches the default coin balance for an account.
-     *
-     * @param accountUuid unique account identifier
-     * @param accountType logical account type
-     * @return future containing coin balance
-     */
-    public CompletableFuture<Long> getCoin(String accountUuid, String accountType) {
-        return getCoin(accountUuid, accountType, DEFAULT_COIN);
+    public CompletableFuture<Long> getBalance(String accountId, String accountType) {
+        return getBalance(accountId, accountType, DEFAULT_CURRENCY_ID);
     }
 
     /**
-     * Asynchronously fetches a specific currency balance for an account.
+     * Retrieves the balance for the requested account and currency identifier.
      *
-     * @param accountUuid unique account identifier
-     * @param accountType logical account type
-     * @param coinType    currency to fetch
-     * @return future containing currency balance
+     * @param accountId the unique account identifier
+     * @param accountType the logical account type
+     * @param currencyId the currency identifier to read
+     * @return a future containing the current balance
      */
-    public CompletableFuture<Long> getCoin(String accountUuid, String accountType, CurrencyType coinType) {
-        return runAsync(() -> db.getCoin(accountUuid, accountType, coinType));
-    }
-
-    // --- SETTERS ---
-
-    /**
-     * Asynchronously sets the default coin balance.
-     *
-     * @param accountUuid unique account identifier
-     * @param accountType logical account type
-     * @param amount      new amount (must be >= 0)
-     * @return future indicating success
-     */
-    public CompletableFuture<Boolean> setCoin(String accountUuid, String accountType, long amount) {
-        return setCoin(accountUuid, accountType, DEFAULT_COIN, amount);
+    public CompletableFuture<Long> getBalance(String accountId, String accountType, int currencyId) {
+        return db.getBalance(accountId, accountType, currencyId);
     }
 
     /**
-     * Asynchronously sets a specific currency balance.
+     * Sets the default currency balance for the requested account.
      *
-     * @param accountUuid unique account identifier
-     * @param accountType logical account type
-     * @param coinType    currency to set
-     * @param amount      new amount (must be >= 0)
-     * @return future indicating success
+     * @param accountId the unique account identifier
+     * @param accountType the logical account type
+     * @param amount the balance value to store
+     * @return a future that resolves to {@code true} when the update succeeds
      */
-    public CompletableFuture<Boolean> setCoin(String accountUuid, String accountType, CurrencyType coinType, long amount) {
-        return runAsync(() -> db.setCoin(accountUuid, accountType, coinType, amount));
-    }
-
-    // --- ADD ---
-
-    /**
-     * Asynchronously adds to the default coin balance.
-     *
-     * @param accountUuid unique account identifier
-     * @param accountType logical account type
-     * @param amount      delta to add (must be > 0)
-     * @return future indicating success
-     */
-    public CompletableFuture<Boolean> addCoin(String accountUuid, String accountType, long amount) {
-        return addCoin(accountUuid, accountType, DEFAULT_COIN, amount);
+    public CompletableFuture<Boolean> setBalance(String accountId, String accountType, long amount) {
+        return setBalance(accountId, accountType, DEFAULT_CURRENCY_ID, amount);
     }
 
     /**
-     * Asynchronously adds to a specific currency balance.
+     * Sets the balance for the requested account and currency identifier.
      *
-     * @param accountUuid unique account identifier
-     * @param accountType logical account type
-     * @param coinType    currency to add
-     * @param amount      delta to add (must be > 0)
-     * @return future indicating success
+     * @param accountId the unique account identifier
+     * @param accountType the logical account type
+     * @param currencyId the currency identifier to update
+     * @param amount the balance value to store
+     * @return a future that resolves to {@code true} when the update succeeds
      */
-    public CompletableFuture<Boolean> addCoin(String accountUuid, String accountType, CurrencyType coinType, long amount) {
-        return runAsync(() -> db.addCoin(accountUuid, accountType, coinType, amount));
-    }
-
-    // --- MINUS ---
-
-    /**
-     * Asynchronously subtracts from the default coin balance.
-     *
-     * @param accountUuid unique account identifier
-     * @param accountType logical account type
-     * @param amount      delta to subtract (must be > 0)
-     * @return future indicating success
-     */
-    public CompletableFuture<Boolean> minusCoin(String accountUuid, String accountType, long amount) {
-        return minusCoin(accountUuid, accountType, DEFAULT_COIN, amount);
+    public CompletableFuture<Boolean> setBalance(String accountId, String accountType, int currencyId, long amount) {
+        return db.setBalance(accountId, accountType, currencyId, amount);
     }
 
     /**
-     * Asynchronously subtracts from a specific currency balance.
+     * Adds to the default currency balance for the requested account.
      *
-     * @param accountUuid unique account identifier
-     * @param accountType logical account type
-     * @param coinType    currency to subtract
-     * @param amount      delta to subtract (must be > 0)
-     * @return future indicating success
+     * @param accountId the unique account identifier
+     * @param accountType the logical account type
+     * @param amount the amount to add
+     * @return a future that resolves to {@code true} when the update succeeds
      */
-    public CompletableFuture<Boolean> minusCoin(String accountUuid, String accountType, CurrencyType coinType, long amount) {
-        return runAsync(() -> db.minusCoin(accountUuid, accountType, coinType, amount));
-    }
-
-    // --- SEND ---
-
-    /**
-     * Asynchronously transfers default coin between two accounts.
-     *
-     * @param senderUuid   sender account id
-     * @param senderType   sender account type
-     * @param receiverUuid receiver account id
-     * @param receiverType receiver account type
-     * @param amount       amount to transfer (>0)
-     * @return future indicating success
-     */
-    public CompletableFuture<Boolean> sendCoin(String senderUuid, String senderType, String receiverUuid, String receiverType, long amount) {
-        return sendCoin(senderUuid, senderType, receiverUuid, receiverType, DEFAULT_COIN, amount);
+    public CompletableFuture<Boolean> addBalance(String accountId, String accountType, long amount) {
+        return addBalance(accountId, accountType, DEFAULT_CURRENCY_ID, amount);
     }
 
     /**
-     * Asynchronously transfers a specific currency between two accounts.
+     * Adds to the balance for the requested account and currency identifier.
      *
-     * @param senderUuid   sender account id
-     * @param senderType   sender account type
-     * @param receiverUuid receiver account id
-     * @param receiverType receiver account type
-     * @param coinType     currency to transfer
-     * @param amount       amount to transfer (>0)
-     * @return future indicating success
+     * @param accountId the unique account identifier
+     * @param accountType the logical account type
+     * @param currencyId the currency identifier to update
+     * @param amount the amount to add
+     * @return a future that resolves to {@code true} when the update succeeds
      */
-    public CompletableFuture<Boolean> sendCoin(String senderUuid, String senderType, String receiverUuid, String receiverType, CurrencyType coinType, long amount) {
-        return runAsync(() -> db.sendCoin(senderUuid, senderType, receiverUuid, receiverType, coinType, amount));
-    }
-
-    // --- UTILITY ---
-
-    /**
-     * Asynchronously ensures an account exists.
-     *
-     * @param accountUuid unique account identifier
-     * @param accountType logical account type
-     * @return future indicating success
-     */
-    public CompletableFuture<Boolean> ensureAccountExist(String accountUuid, String accountType) {
-        return runAsync(() -> db.ensureAccountExist(accountUuid, accountType));
+    public CompletableFuture<Boolean> addBalance(String accountId, String accountType, int currencyId, long amount) {
+        return db.addBalance(accountId, accountType, currencyId, amount);
     }
 
     /**
-     * Properly shuts down the database connection and releases resources.
+     * Subtracts from the default currency balance for the requested account.
+     *
+     * @param accountId the unique account identifier
+     * @param accountType the logical account type
+     * @param amount the amount to subtract
+     * @return a future that resolves to {@code true} when the subtraction succeeds
+     */
+    public CompletableFuture<Boolean> subtractBalance(String accountId, String accountType, long amount) {
+        return subtractBalance(accountId, accountType, DEFAULT_CURRENCY_ID, amount);
+    }
+
+    /**
+     * Subtracts from the balance for the requested account and currency identifier.
+     *
+     * @param accountId the unique account identifier
+     * @param accountType the logical account type
+     * @param currencyId the currency identifier to update
+     * @param amount the amount to subtract
+     * @return a future that resolves to {@code true} when the subtraction succeeds
+     */
+    public CompletableFuture<Boolean> subtractBalance(String accountId, String accountType, int currencyId, long amount) {
+        return db.subtractBalance(accountId, accountType, currencyId, amount);
+    }
+
+    /**
+     * Transfers the default currency between two accounts.
+     *
+     * @param senderId the sender account identifier
+     * @param senderType the sender account type
+     * @param receiverId the receiver account identifier
+     * @param receiverType the receiver account type
+     * @param amount the amount to transfer
+     * @return a future that resolves to {@code true} when the transfer succeeds
+     */
+    public CompletableFuture<Boolean> transferBalance(
+            String senderId,
+            String senderType,
+            String receiverId,
+            String receiverType,
+            long amount
+    ) {
+        return transferBalance(senderId, senderType, receiverId, receiverType, DEFAULT_CURRENCY_ID, amount);
+    }
+
+    /**
+     * Transfers a specific currency between two accounts.
+     *
+     * @param senderId the sender account identifier
+     * @param senderType the sender account type
+     * @param receiverId the receiver account identifier
+     * @param receiverType the receiver account type
+     * @param currencyId the currency identifier to transfer
+     * @param amount the amount to transfer
+     * @return a future that resolves to {@code true} when the transfer succeeds
+     */
+    public CompletableFuture<Boolean> transferBalance(
+            String senderId,
+            String senderType,
+            String receiverId,
+            String receiverType,
+            int currencyId,
+            long amount
+    ) {
+        return db.transferBalance(senderId, senderType, receiverId, receiverType, currencyId, amount);
+    }
+
+    /**
+     * Ensures the default currency record exists for the requested account.
+     *
+     * @param accountId the unique account identifier
+     * @param accountType the logical account type
+     * @return a future that resolves to {@code true} when the account row exists
+     */
+    public CompletableFuture<Boolean> ensureAccountExists(String accountId, String accountType) {
+        return ensureAccountExists(accountId, accountType, DEFAULT_CURRENCY_ID);
+    }
+
+    /**
+     * Ensures the requested account and currency record exists.
+     *
+     * @param accountId the unique account identifier
+     * @param accountType the logical account type
+     * @param currencyId the currency identifier to ensure
+     * @return a future that resolves to {@code true} when the account row exists
+     */
+    public CompletableFuture<Boolean> ensureAccountExists(String accountId, String accountType, int currencyId) {
+        return db.ensureAccountExists(accountId, accountType, currencyId);
+    }
+
+    /**
+     * Closes the active database implementation and clears the provider singleton.
      */
     public void shutdown() {
-        if (db != null) {
-            db.close();
-        }
-        instance = null; // Clear singleton
+        db.close();
+        instance = null;
     }
 }
