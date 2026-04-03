@@ -91,7 +91,7 @@ public class MCEconomyMongoDB implements IMCEconomyDB {
      * @return a future containing the current balance
      */
     @Override
-    public CompletableFuture<Long> getBalance(String accountId, String accountType, int currencyId) {
+    public CompletableFuture<Long> getBalance(String accountType, String accountId, int currencyId) {
         return CompletableFuture.supplyAsync(() -> getBalanceSync(accountType, accountId, currencyId));
     }
 
@@ -105,7 +105,7 @@ public class MCEconomyMongoDB implements IMCEconomyDB {
      * @return a future that resolves to {@code true} when the update succeeds
      */
     @Override
-    public CompletableFuture<Boolean> setBalance(String accountId, String accountType, int currencyId, long amount) {
+    public CompletableFuture<Boolean> setBalance(String accountType, String accountId, int currencyId, long amount) {
         return CompletableFuture.supplyAsync(() -> setBalanceSync(accountType, accountId, currencyId, amount));
     }
 
@@ -119,7 +119,7 @@ public class MCEconomyMongoDB implements IMCEconomyDB {
      * @return a future that resolves to {@code true} when the update succeeds
      */
     @Override
-    public CompletableFuture<Boolean> addBalance(String accountId, String accountType, int currencyId, long amount) {
+    public CompletableFuture<Boolean> addBalance(String accountType, String accountId, int currencyId, long amount) {
         return CompletableFuture.supplyAsync(() -> addBalanceSync(accountType, accountId, currencyId, amount));
     }
 
@@ -133,7 +133,7 @@ public class MCEconomyMongoDB implements IMCEconomyDB {
      * @return a future that resolves to {@code true} when the subtraction succeeds
      */
     @Override
-    public CompletableFuture<Boolean> subtractBalance(String accountId, String accountType, int currencyId, long amount) {
+    public CompletableFuture<Boolean> subtractBalance(String accountType, String accountId, int currencyId, long amount) {
         return CompletableFuture.supplyAsync(() -> subtractBalanceSync(accountType, accountId, currencyId, amount));
     }
 
@@ -171,7 +171,7 @@ public class MCEconomyMongoDB implements IMCEconomyDB {
      * @return a future that resolves to {@code true} when the row exists
      */
     @Override
-    public CompletableFuture<Boolean> ensureAccountExists(String accountId, String accountType, int currencyId) {
+    public CompletableFuture<Boolean> ensureAccountExists(String accountType, String accountId, int currencyId) {
         return CompletableFuture.supplyAsync(() -> ensureAccountExistsSync(accountType, accountId, currencyId));
     }
 
