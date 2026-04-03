@@ -24,12 +24,19 @@ repositories {
             password = System.getenv('GITHUB_TOKEN') ?: System.getenv('AGENT_TOKEN') ?: System.getenv('USER_GITHUB_TOKEN')
         }
     }
+    maven {
+        url = uri("https://maven.pkg.github.com/MCClauneck/plugin-api")
+        credentials {
+            username = System.getenv('GITHUB_ACTOR') ?: System.getenv('AGENT_NAME') ?: System.getenv('USER_GITHUB_NAME')
+            password = System.getenv('GITHUB_TOKEN') ?: System.getenv('AGENT_TOKEN') ?: System.getenv('USER_GITHUB_TOKEN')
+        }
+    }
 }
 
 dependencies {
     compileOnly 'com.zaxxer:HikariCP:7.0.2'
     compileOnly 'org.xerial:sqlite-jdbc:3.51.2.0'
-    compileOnly "io.github.mcclauneck:mceconomy-api:2026.0.4-4"
+    compileOnly "io.github.mcclauneck:mceconomy-api:2026.0.5-2"
     compileOnly 'com.google.code.gson:gson:2.13.2'
     compileOnly 'org.mongodb:mongodb-driver-sync:5.6.4'
 }
