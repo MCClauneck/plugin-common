@@ -105,7 +105,7 @@ public class MCEconomySQLite implements IMCEconomyDB {
      * @return a future containing the current balance
      */
     @Override
-    public CompletableFuture<Long> getBalance(String accountId, String accountType, int currencyId) {
+    public CompletableFuture<Long> getBalance(String accountType, String accountId, int currencyId) {
         return CompletableFuture.supplyAsync(() -> {
             synchronized (lock) {
                 return getBalanceSync(accountType, accountId, currencyId);
@@ -123,7 +123,7 @@ public class MCEconomySQLite implements IMCEconomyDB {
      * @return a future that resolves to {@code true} when the update succeeds
      */
     @Override
-    public CompletableFuture<Boolean> setBalance(String accountId, String accountType, int currencyId, long amount) {
+    public CompletableFuture<Boolean> setBalance(String accountType, String accountId, int currencyId, long amount) {
         return CompletableFuture.supplyAsync(() -> {
             synchronized (lock) {
                 return setBalanceSync(accountType, accountId, currencyId, amount);
@@ -141,7 +141,7 @@ public class MCEconomySQLite implements IMCEconomyDB {
      * @return a future that resolves to {@code true} when the update succeeds
      */
     @Override
-    public CompletableFuture<Boolean> addBalance(String accountId, String accountType, int currencyId, long amount) {
+    public CompletableFuture<Boolean> addBalance(String accountType, String accountId, int currencyId, long amount) {
         return CompletableFuture.supplyAsync(() -> {
             synchronized (lock) {
                 return addBalanceSync(accountType, accountId, currencyId, amount);
@@ -159,7 +159,7 @@ public class MCEconomySQLite implements IMCEconomyDB {
      * @return a future that resolves to {@code true} when the subtraction succeeds
      */
     @Override
-    public CompletableFuture<Boolean> subtractBalance(String accountId, String accountType, int currencyId, long amount) {
+    public CompletableFuture<Boolean> subtractBalance(String accountType, String accountId, int currencyId, long amount) {
         return CompletableFuture.supplyAsync(() -> {
             synchronized (lock) {
                 return subtractBalanceSync(accountType, accountId, currencyId, amount);
@@ -203,7 +203,7 @@ public class MCEconomySQLite implements IMCEconomyDB {
      * @return a future that resolves to {@code true} when the row exists
      */
     @Override
-    public CompletableFuture<Boolean> ensureAccountExists(String accountId, String accountType, int currencyId) {
+    public CompletableFuture<Boolean> ensureAccountExists(String accountType, String accountId, int currencyId) {
         return CompletableFuture.supplyAsync(() -> {
             synchronized (lock) {
                 try (Connection conn = dataSource.getConnection()) {

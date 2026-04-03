@@ -61,99 +61,99 @@ public class MCEconomyProvider {
     /**
      * Retrieves the default currency balance for the requested account.
      *
-     * @param accountId the unique account identifier
      * @param accountType the logical account type
+     * @param accountId the unique account identifier
      * @return a future containing the balance for the default currency
      */
-    public CompletableFuture<Long> getBalance(String accountId, String accountType) {
-        return getBalance(accountId, accountType, DEFAULT_CURRENCY_ID);
+    public CompletableFuture<Long> getBalance(String accountType, String accountId) {
+        return getBalance(accountType, accountId, DEFAULT_CURRENCY_ID);
     }
 
     /**
      * Retrieves the balance for the requested account and currency identifier.
      *
-     * @param accountId the unique account identifier
      * @param accountType the logical account type
+     * @param accountId the unique account identifier
      * @param currencyId the currency identifier to read
      * @return a future containing the current balance
      */
-    public CompletableFuture<Long> getBalance(String accountId, String accountType, int currencyId) {
-        return db.getBalance(accountId, accountType, currencyId);
+    public CompletableFuture<Long> getBalance(String accountType, String accountId, int currencyId) {
+        return db.getBalance(accountType, accountId, currencyId);
     }
 
     /**
      * Sets the default currency balance for the requested account.
      *
-     * @param accountId the unique account identifier
      * @param accountType the logical account type
+     * @param accountId the unique account identifier
      * @param amount the balance value to store
      * @return a future that resolves to {@code true} when the update succeeds
      */
-    public CompletableFuture<Boolean> setBalance(String accountId, String accountType, long amount) {
-        return setBalance(accountId, accountType, DEFAULT_CURRENCY_ID, amount);
+    public CompletableFuture<Boolean> setBalance(String accountType, String accountId, long amount) {
+        return setBalance(accountType, accountId, DEFAULT_CURRENCY_ID, amount);
     }
 
     /**
      * Sets the balance for the requested account and currency identifier.
      *
-     * @param accountId the unique account identifier
      * @param accountType the logical account type
+     * @param accountId the unique account identifier
      * @param currencyId the currency identifier to update
      * @param amount the balance value to store
      * @return a future that resolves to {@code true} when the update succeeds
      */
-    public CompletableFuture<Boolean> setBalance(String accountId, String accountType, int currencyId, long amount) {
-        return db.setBalance(accountId, accountType, currencyId, amount);
+    public CompletableFuture<Boolean> setBalance(String accountType, String accountId, int currencyId, long amount) {
+        return db.setBalance(accountType, accountId, currencyId, amount);
     }
 
     /**
      * Adds to the default currency balance for the requested account.
      *
-     * @param accountId the unique account identifier
      * @param accountType the logical account type
+     * @param accountId the unique account identifier
      * @param amount the amount to add
      * @return a future that resolves to {@code true} when the update succeeds
      */
-    public CompletableFuture<Boolean> addBalance(String accountId, String accountType, long amount) {
-        return addBalance(accountId, accountType, DEFAULT_CURRENCY_ID, amount);
+    public CompletableFuture<Boolean> addBalance(String accountType, String accountId, long amount) {
+        return addBalance(accountType, accountId, DEFAULT_CURRENCY_ID, amount);
     }
 
     /**
      * Adds to the balance for the requested account and currency identifier.
      *
-     * @param accountId the unique account identifier
      * @param accountType the logical account type
+     * @param accountId the unique account identifier
      * @param currencyId the currency identifier to update
      * @param amount the amount to add
      * @return a future that resolves to {@code true} when the update succeeds
      */
-    public CompletableFuture<Boolean> addBalance(String accountId, String accountType, int currencyId, long amount) {
-        return db.addBalance(accountId, accountType, currencyId, amount);
+    public CompletableFuture<Boolean> addBalance(String accountType, String accountId, int currencyId, long amount) {
+        return db.addBalance(accountType, accountId, currencyId, amount);
     }
 
     /**
      * Subtracts from the default currency balance for the requested account.
      *
-     * @param accountId the unique account identifier
      * @param accountType the logical account type
+     * @param accountId the unique account identifier
      * @param amount the amount to subtract
      * @return a future that resolves to {@code true} when the subtraction succeeds
      */
-    public CompletableFuture<Boolean> subtractBalance(String accountId, String accountType, long amount) {
-        return subtractBalance(accountId, accountType, DEFAULT_CURRENCY_ID, amount);
+    public CompletableFuture<Boolean> subtractBalance(String accountType, String accountId, long amount) {
+        return subtractBalance(accountType, accountId, DEFAULT_CURRENCY_ID, amount);
     }
 
     /**
      * Subtracts from the balance for the requested account and currency identifier.
      *
-     * @param accountId the unique account identifier
      * @param accountType the logical account type
+     * @param accountId the unique account identifier
      * @param currencyId the currency identifier to update
      * @param amount the amount to subtract
      * @return a future that resolves to {@code true} when the subtraction succeeds
      */
-    public CompletableFuture<Boolean> subtractBalance(String accountId, String accountType, int currencyId, long amount) {
-        return db.subtractBalance(accountId, accountType, currencyId, amount);
+    public CompletableFuture<Boolean> subtractBalance(String accountType, String accountId, int currencyId, long amount) {
+        return db.subtractBalance(accountType, accountId, currencyId, amount);
     }
 
     /**
@@ -201,24 +201,24 @@ public class MCEconomyProvider {
     /**
      * Ensures the default currency record exists for the requested account.
      *
-     * @param accountId the unique account identifier
      * @param accountType the logical account type
+     * @param accountId the unique account identifier
      * @return a future that resolves to {@code true} when the account row exists
      */
-    public CompletableFuture<Boolean> ensureAccountExists(String accountId, String accountType) {
-        return ensureAccountExists(accountId, accountType, DEFAULT_CURRENCY_ID);
+    public CompletableFuture<Boolean> ensureAccountExists(String accountType, String accountId) {
+        return ensureAccountExists(accountType, accountId, DEFAULT_CURRENCY_ID);
     }
 
     /**
      * Ensures the requested account and currency record exists.
      *
-     * @param accountId the unique account identifier
      * @param accountType the logical account type
+     * @param accountId the unique account identifier
      * @param currencyId the currency identifier to ensure
      * @return a future that resolves to {@code true} when the account row exists
      */
-    public CompletableFuture<Boolean> ensureAccountExists(String accountId, String accountType, int currencyId) {
-        return db.ensureAccountExists(accountId, accountType, currencyId);
+    public CompletableFuture<Boolean> ensureAccountExists(String accountType, String accountId, int currencyId) {
+        return db.ensureAccountExists(accountType, accountId, currencyId);
     }
 
     /**

@@ -247,13 +247,13 @@ public class MCEconomyAPI implements IMCEconomyDB, WebSocket.Listener {
     /**
      * Retrieves the balance for the requested account and currency identifier.
      *
-     * @param accountId the unique account identifier
      * @param accountType the logical account type
+     * @param accountId the unique account identifier
      * @param currencyId the currency identifier to read
      * @return a future containing the remote balance value
      */
     @Override
-    public CompletableFuture<Long> getBalance(String accountId, String accountType, int currencyId) {
+    public CompletableFuture<Long> getBalance(String accountType, String accountId, int currencyId) {
         JsonObject payload = buildBalancePayload("get_balance", accountType, accountId, currencyId, null);
         return sendWsRequestAsync(payload).thenApply(response -> {
             if (response != null && response.has("success") && response.get("success").getAsBoolean()) {
@@ -266,14 +266,14 @@ public class MCEconomyAPI implements IMCEconomyDB, WebSocket.Listener {
     /**
      * Sets the balance for the requested account and currency identifier.
      *
-     * @param accountId the unique account identifier
      * @param accountType the logical account type
+     * @param accountId the unique account identifier
      * @param currencyId the currency identifier to update
      * @param amount the new balance
      * @return a future that resolves to {@code true} when the remote update succeeds
      */
     @Override
-    public CompletableFuture<Boolean> setBalance(String accountId, String accountType, int currencyId, long amount) {
+    public CompletableFuture<Boolean> setBalance(String accountType, String accountId, int currencyId, long amount) {
         if (amount < 0 || currencyId <= 0) {
             return CompletableFuture.completedFuture(false);
         }
@@ -284,14 +284,14 @@ public class MCEconomyAPI implements IMCEconomyDB, WebSocket.Listener {
     /**
      * Adds to the balance for the requested account and currency identifier.
      *
-     * @param accountId the unique account identifier
      * @param accountType the logical account type
+     * @param accountId the unique account identifier
      * @param currencyId the currency identifier to update
      * @param amount the amount to add
      * @return a future that resolves to {@code true} when the remote update succeeds
      */
     @Override
-    public CompletableFuture<Boolean> addBalance(String accountId, String accountType, int currencyId, long amount) {
+    public CompletableFuture<Boolean> addBalance(String accountType, String accountId, int currencyId, long amount) {
         if (amount <= 0 || currencyId <= 0) {
             return CompletableFuture.completedFuture(false);
         }
@@ -302,14 +302,14 @@ public class MCEconomyAPI implements IMCEconomyDB, WebSocket.Listener {
     /**
      * Subtracts from the balance for the requested account and currency identifier.
      *
-     * @param accountId the unique account identifier
      * @param accountType the logical account type
+     * @param accountId the unique account identifier
      * @param currencyId the currency identifier to update
      * @param amount the amount to subtract
      * @return a future that resolves to {@code true} when the remote update succeeds
      */
     @Override
-    public CompletableFuture<Boolean> subtractBalance(String accountId, String accountType, int currencyId, long amount) {
+    public CompletableFuture<Boolean> subtractBalance(String accountType, String accountId, int currencyId, long amount) {
         if (amount <= 0 || currencyId <= 0) {
             return CompletableFuture.completedFuture(false);
         }
@@ -356,13 +356,13 @@ public class MCEconomyAPI implements IMCEconomyDB, WebSocket.Listener {
     /**
      * Ensures the requested account and currency row exists remotely.
      *
-     * @param accountId the unique account identifier
      * @param accountType the logical account type
+     * @param accountId the unique account identifier
      * @param currencyId the currency identifier to ensure
      * @return a future that resolves to {@code true} when the remote row exists
      */
     @Override
-    public CompletableFuture<Boolean> ensureAccountExists(String accountId, String accountType, int currencyId) {
+    public CompletableFuture<Boolean> ensureAccountExists(String accountType, String accountId, int currencyId) {
         if (currencyId <= 0) {
             return CompletableFuture.completedFuture(false);
         }
