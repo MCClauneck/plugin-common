@@ -159,39 +159,39 @@ public class MCEconomyProvider {
     /**
      * Transfers the default currency between two accounts.
      *
-     * @param senderId the sender account identifier
      * @param senderType the sender account type
-     * @param receiverId the receiver account identifier
+     * @param senderId the sender account identifier
      * @param receiverType the receiver account type
+     * @param receiverId the receiver account identifier
      * @param amount the amount to transfer
      * @return a future that resolves to {@code true} when the transfer succeeds
      */
     public CompletableFuture<Boolean> transferBalance(
-            String senderId,
             String senderType,
-            String receiverId,
+            String senderId,
             String receiverType,
+            String receiverId,
             long amount
     ) {
-        return transferBalance(senderId, senderType, receiverId, receiverType, DEFAULT_CURRENCY_ID, amount);
+        return transferBalance(senderType, senderId, receiverType, receiverId, DEFAULT_CURRENCY_ID, amount);
     }
 
     /**
      * Transfers a specific currency between two accounts.
      *
-     * @param senderId the sender account identifier
      * @param senderType the sender account type
-     * @param receiverId the receiver account identifier
+     * @param senderId the sender account identifier
      * @param receiverType the receiver account type
+     * @param receiverId the receiver account identifier
      * @param currencyId the currency identifier to transfer
      * @param amount the amount to transfer
      * @return a future that resolves to {@code true} when the transfer succeeds
      */
     public CompletableFuture<Boolean> transferBalance(
-            String senderId,
             String senderType,
-            String receiverId,
+            String senderId,
             String receiverType,
+            String receiverId,
             int currencyId,
             long amount
     ) {
