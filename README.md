@@ -139,6 +139,61 @@ PASSWORD = System.getenv('GITHUB_TOKEN')
 
 ---
 
+## ⚙️ How it Works
+
+MCEconomy Common is designed around **Asynchronous Non-Blocking Operations**. This means all interactions with the database (whether local like SQLite, or remote like MongoDB, MySQL, PostgreSQL, or a WebSocket API) run on separate threads and do not block the main server thread. This is crucial for maintaining server performance (TPS), especially on modern server software like FoliaMC.
+
+### 1. Asynchronous Futures (`CompletableFuture`)
+Every method in the `MCEconomyProvider` and `IMCEconomyDB` interfaces returns a `CompletableFuture`. A `CompletableFuture` represents a value that might not be available yet. 
+
+Instead of waiting (blocking) for the database to respond, you attach a callback (like `.thenAccept(...)` or `.thenApply(...)`) that will execute once the database operation finishes.
+
+```java
+// Good (Asynchronous - Non-blocking):
+provider.getBalance("PLAYER", playerUUID.toString(), 1)
+    .thenAccept(balance -> {
+        // This code runs LATER, when the database responds.
+        player.sendMessage("Your balance is: " + balance);
+    });
+// The server continues ticking immediately without waiting.
+
+// BAD (Synchronous - Blocking):
+// long balance = provider.getBalance("PLAYER", playerUUID.toString(), 1).join();
+// This freezes the server thread until the database responds! Avoid this!
+```
+
+### 2. Provider Pattern (`MCEconomyProvider`)
+The `MCEconomyProvider` is a high-level wrapper around the underlying database implementation (`IMCEconomyDB`). It acts as a singleton access point for the entire economy ecosystem.
+
+It provides convenience methods that default to a `currencyId` of `1` if you don't specify one, simplifying code when you only use a single primary currency.
+
+```java
+// Using the provider (assumes currencyId = 1)
+MCEconomyProvider.getInstance().addBalance("PLAYER", playerUUID.toString(), 500)
+    .thenAccept(success -> {
+        if (success) System.out.println("Added 500 to default currency.");
+    });
+```
+
+### 3. Account Types & IDs (`accountType`, `accountId`)
+MCEconomy is flexible and isn't just for players. It uses a generic "Account Type" and "Account ID" system.
+
+- **`accountType`**: Defines what *kind* of entity owns the account. (e.g., `"PLAYER"`, `"CLAN"`, `"FACTION"`, `"TOWN"`, `"SERVER"`).
+- **`accountId`**: The unique identifier for that specific entity. (e.g., a Player's UUID string, a Clan's ID).
+
+This structure allows you to use the exact same API to manage clan banks as you use for player wallets.
+
+### 4. Dynamic Currencies (`currencyId`)
+Instead of hardcoding "Coins" or "Tokens", MCEconomy supports infinite custom currencies identified by an Integer `currencyId`.
+- `1` might be your primary "Coins".
+- `2` might be a premium "Gems" currency.
+- `3` might be a seasonal event currency.
+
+### 5. Thread Safety & Synchronization (Internal)
+While you interact with the asynchronous `CompletableFuture` API, the internal database implementations (e.g., `MCEconomyMySQL`, `MCEconomyMongoDB`) handle the actual synchronization safely. They ensure that operations like `transferBalance` or `subtractBalance` correctly check balances before modifying them, preventing race conditions or money duplication bugs, even under heavy load.
+
+---
+
 ## 📘 API Overview
 
 <details>
@@ -160,24 +215,47 @@ void shutdown();
 
 ---
 
-## ⚡ Usage Example
+## ⚡ Usage Examples
 
-<details>
-<summary><strong>Click to expand example</strong></summary>
-
+### Fetching a Balance
 ```java
-provider.getBalance("PLAYER", playerUUID, 1)
+MCEconomyProvider provider = MCEconomyProvider.getInstance();
+
+// Fetch balance for currency ID 1
+provider.getBalance("PLAYER", playerUUID.toString(), 1)
     .thenAccept(balance -> {
         System.out.println("Balance: " + balance);
     });
+```
 
-provider.addBalance("PLAYER", playerUUID, 1, 100)
+### Adding Funds
+```java
+// Add 100 to currency ID 1
+provider.addBalance("PLAYER", playerUUID.toString(), 1, 100)
     .thenAccept(success -> {
         if (success) {
-            System.out.println("Balance updated!");
+            System.out.println("Balance successfully updated!");
+        } else {
+            System.out.println("Failed to update balance.");
         }
     });
 ```
 
-</details>
+### Transferring Funds (e.g., Player to Clan)
+```java
+// Transfer 500 of currency ID 1 from a Player to a Clan Bank
+provider.transferBalance(
+        "PLAYER", playerUUID.toString(),  // Sender
+        "CLAN", clanId.toString(),        // Receiver
+        1,                                // Currency ID
+        500                               // Amount
+    ).thenAccept(success -> {
+        if (success) {
+            System.out.println("Transfer successful!");
+        } else {
+            System.out.println("Transfer failed! (Insufficient funds or error)");
+        }
+    });
+```
+
 
