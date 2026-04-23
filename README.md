@@ -9,7 +9,7 @@ It uses `CompletableFuture` to ensure non-blocking database operations and suppo
 
 - **Group:** `io.github.mcclauneck`  
 - **Artifact:** `mceconomy-common`  
-- **Version:** `2026.0.5-3` 
+- **Version:** `2026.0.5-4` 
 
 ---
 
@@ -36,7 +36,7 @@ It uses `CompletableFuture` to ensure non-blocking database operations and suppo
 <dependency>
   <groupId>io.github.mcclauneck</groupId>
   <artifactId>mceconomy-common</artifactId>
-  <version>2026.0.5-3</version>
+  <version>2026.0.5-4</version>
 </dependency>
 ```
 
@@ -81,7 +81,7 @@ repositories {
 #### 2. Dependency
 ```groovy
 dependencies {
-    implementation 'io.github.mcclauneck:mceconomy-common:2026.0.5-3'
+    implementation 'io.github.mcclauneck:mceconomy-common:2026.0.5-4'
 }
 ```
 
@@ -115,7 +115,7 @@ repositories {
 #### 2. Dependency
 ```kotlin
 dependencies {
-    implementation("io.github.mcclauneck:mceconomy-common:2026.0.5-3")
+    implementation("io.github.mcclauneck:mceconomy-common:2026.0.5-4")
 }
 ```
 
@@ -141,7 +141,16 @@ PASSWORD = System.getenv('GITHUB_TOKEN')
 
 ## ⚙️ How it Works
 
-MCEconomy Common is designed around **Asynchronous Non-Blocking Operations**. This means all interactions with the database (whether local like SQLite, or remote like MongoDB, MySQL, PostgreSQL, or a WebSocket API) run on separate threads and do not block the main server thread. This is crucial for maintaining server performance (TPS), especially on modern server software like FoliaMC.
+MCEconomy Common is designed around **Asynchronous Non-Blocking Operations**. This means all interactions with the remote Economy API (via HTTP POST) run on separate threads and do not block the main server thread. This is crucial for maintaining server performance (TPS), especially on modern server software like FoliaMC.
+
+## 🛠️ Environment Configuration
+
+To use the Economy API, the following environment variables must be set on the server host:
+
+| Variable | Description |
+| :--- | :--- |
+| `MCSERVER_URL` | The base URL of the Economy API (e.g., `http://localhost:8080`) |
+| `MCSERVER_API_TOKEN` | The secret token used to authenticate requests. |
 
 ### 1. Asynchronous Futures (`CompletableFuture`)
 Every method in the `MCEconomyProvider` and `IMCEconomyDB` interfaces returns a `CompletableFuture`. A `CompletableFuture` represents a value that might not be available yet. 
@@ -185,12 +194,15 @@ This structure allows you to use the exact same API to manage clan banks as you 
 
 ### 4. Dynamic Currencies (`currencyId`)
 Instead of hardcoding "Coins" or "Tokens", MCEconomy supports infinite custom currencies identified by an Integer `currencyId`.
-- `1` might be your primary "Coins".
-- `2` might be a premium "Gems" currency.
-- `3` might be a seasonal event currency.
+
+These map to the remote API as follows:
+- `1`: `coin` (Default)
+- `2`: `copper`
+- `3`: `silver`
+- `4`: `gold`
 
 ### 5. Thread Safety & Synchronization (Internal)
-While you interact with the asynchronous `CompletableFuture` API, the internal database implementations (e.g., `MCEconomyMySQL`, `MCEconomyMongoDB`) handle the actual synchronization safely. They ensure that operations like `transferBalance` or `subtractBalance` correctly check balances before modifying them, preventing race conditions or money duplication bugs, even under heavy load.
+While you interact with the asynchronous `CompletableFuture` API, the internal `MCEconomyAPI` implementation handles the HTTP communication safely. It ensures that operations like `transferBalance` or `subtractBalance` are processed by the remote service, preventing race conditions or money duplication bugs, even under heavy load.
 
 ---
 
