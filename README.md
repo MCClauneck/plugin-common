@@ -9,7 +9,7 @@ It uses `CompletableFuture` to ensure non-blocking database operations and suppo
 
 - **Group:** `io.github.mcclauneck`  
 - **Artifact:** `mceconomy-common`  
-- **Version:** `2026.0.5-4` 
+- **Version:** `2026.0.5-5` 
 
 ---
 
@@ -36,7 +36,7 @@ It uses `CompletableFuture` to ensure non-blocking database operations and suppo
 <dependency>
   <groupId>io.github.mcclauneck</groupId>
   <artifactId>mceconomy-common</artifactId>
-  <version>2026.0.5-4</version>
+  <version>2026.0.5-5</version>
 </dependency>
 ```
 
@@ -81,7 +81,7 @@ repositories {
 #### 2. Dependency
 ```groovy
 dependencies {
-    implementation 'io.github.mcclauneck:mceconomy-common:2026.0.5-4'
+    implementation 'io.github.mcclauneck:mceconomy-common:2026.0.5-5'
 }
 ```
 
@@ -115,7 +115,7 @@ repositories {
 #### 2. Dependency
 ```kotlin
 dependencies {
-    implementation("io.github.mcclauneck:mceconomy-common:2026.0.5-4")
+    implementation("io.github.mcclauneck:mceconomy-common:2026.0.5-5")
 }
 ```
 
