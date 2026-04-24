@@ -74,11 +74,11 @@ public class MCEconomyAPI implements IMCEconomyDB {
             return CompletableFuture.completedFuture(new JsonObject());
         }
 
-        payload.addProperty("token", this.apiToken);
-
+        // Token is now handled via Authorization Header instead of JSON payload
         HttpRequest request = HttpRequest.newBuilder()
                 .uri(URI.create(this.apiUrl + "/api/economy"))
                 .header("Content-Type", "application/json")
+                .header("Authorization", "Bearer " + this.apiToken)
                 .POST(HttpRequest.BodyPublishers.ofString(gson.toJson(payload)))
                 .build();
 
