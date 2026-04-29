@@ -4,6 +4,12 @@ plugins {
     id 'io.github.mcengine.gradle.plugin.version-calculator' version '1.0.0'
 }
 
+java {
+    toolchain {
+        languageVersion = JavaLanguageVersion.of(25)
+    }
+}
+
 group = project.property('project-group')
 
 def artifactId = project.findProperty('project-artifact-id') ?: 'mceconomy-common'

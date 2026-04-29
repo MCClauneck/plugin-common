@@ -109,7 +109,11 @@ public class MCEconomyAPI implements IMCEconomyDB {
                 JsonObject balances = response.getAsJsonObject("balances");
                 String coinType = mapCurrencyIdToType(currencyId);
                 if (balances.has(coinType)) {
-                    return balances.get(coinType).getAsLong();
+                    try {
+                        return Long.parseLong(balances.get(coinType).getAsString());
+                    } catch (NumberFormatException e) {
+                        System.err.println("[MCEconomy API] Failed to parse balance: " + e.getMessage());
+                    }
                 }
             }
             return 0L;
@@ -118,6 +122,9 @@ public class MCEconomyAPI implements IMCEconomyDB {
 
     @Override
     public CompletableFuture<Boolean> setBalance(String accountType, String accountId, int currencyId, long amount) {
+        if (amount <= 0) {
+            return CompletableFuture.completedFuture(false);
+        }
         // The new API doesn't seem to have a direct 'set_coin' action.
         // We'll have to get the current balance and then add/minus the difference.
         return getBalance(accountType, accountId, currencyId).thenCompose(currentBalance -> {
@@ -133,39 +140,49 @@ public class MCEconomyAPI implements IMCEconomyDB {
 
     @Override
     public CompletableFuture<Boolean> addBalance(String accountType, String accountId, int currencyId, long amount) {
+        if (amount <= 0) {
+            return CompletableFuture.completedFuture(false);
+        }
         JsonObject payload = new JsonObject();
         payload.addProperty("action", "add_coin");
         payload.addProperty("account_type", accountType);
         payload.addProperty("account_uuid", accountId);
         payload.addProperty("coin_type", mapCurrencyIdToType(currencyId));
-        payload.addProperty("amount", amount);
+        payload.addProperty("amount", String.valueOf(amount));
 
         return sendRequest(payload).thenApply(response -> response.has("message") && response.get("message").getAsString().equals("Coin added"));
     }
 
     @Override
     public CompletableFuture<Boolean> subtractBalance(String accountType, String accountId, int currencyId, long amount) {
+        if (amount <= 0) {
+            return CompletableFuture.completedFuture(false);
+        }
         JsonObject payload = new JsonObject();
         payload.addProperty("action", "minus_coin");
         payload.addProperty("account_type", accountType);
         payload.addProperty("account_uuid", accountId);
         payload.addProperty("coin_type", mapCurrencyIdToType(currencyId));
-        payload.addProperty("amount", amount);
+        payload.addProperty("amount", String.valueOf(amount));
 
         return sendRequest(payload).thenApply(response -> response.has("message") && response.get("message").getAsString().equals("Coin deducted"));
     }
 
     @Override
     public CompletableFuture<Boolean> transferBalance(String senderId, String senderType, String receiverId, String receiverType, int currencyId, long amount) {
-        // The new API doesn't have a direct 'transfer' action.
-        // Implementing as a sequence of subtract and add.
-        return subtractBalance(senderType, senderId, currencyId, amount)
-                .thenCompose(success -> {
-                    if (success) {
-                        return addBalance(receiverType, receiverId, currencyId, amount);
-                    }
-                    return CompletableFuture.completedFuture(false);
-                });
+        if (amount <= 0) {
+            return CompletableFuture.completedFuture(false);
+        }
+        JsonObject payload = new JsonObject();
+        payload.addProperty("action", "transfer_coin");
+        payload.addProperty("sender_uuid", senderId);
+        payload.addProperty("sender_type", senderType);
+        payload.addProperty("receiver_uuid", receiverId);
+        payload.addProperty("receiver_type", receiverType);
+        payload.addProperty("coin_type", mapCurrencyIdToType(currencyId));
+        payload.addProperty("amount", String.valueOf(amount));
+
+        return sendRequest(payload).thenApply(response -> response.has("message") && response.get("message").getAsString().equals("Coin transferred"));
     }
 
     @Override
